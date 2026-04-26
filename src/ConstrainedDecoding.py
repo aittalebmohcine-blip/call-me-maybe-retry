@@ -1,14 +1,11 @@
-from llm_sdk import Small_LLM_Model
-
 from typing import Dict, List
-# from pydantic import BaseModel
 import json
 
 
 class ConstrainedDecoding():
-    def __init__(self) -> None:
+    def __init__(self, model) -> None:
         pass
-        self._model: Small_LLM_Model = Small_LLM_Model()
+        self._model = model
         self._vocab_path: str = self._model.get_path_to_vocab_file()
 
         with open(self._vocab_path, "r", encoding="utf-8") as f:

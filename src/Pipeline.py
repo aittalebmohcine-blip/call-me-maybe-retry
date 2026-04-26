@@ -1,15 +1,15 @@
-from pydantic import BaseModel
 from llm_sdk import Small_LLM_Model
 from src.ConstrainedDecoding import ConstrainedDecoding
 
 NEG_INF = float('-inf')
 
 
-class Pipeline(BaseModel):
-    model: Small_LLM_Model = Small_LLM_Model()
-    tools = ConstrainedDecoding()
+class Pipeline():
+    def __init__(self) -> None:
+        self.model: Small_LLM_Model = Small_LLM_Model()
+        self.tools: ConstrainedDecoding = ConstrainedDecoding(self.model)
 
-    def generate(self, prompt: str, max_new_tokens: int = 50) -> str:
+    def generate(self, prompt: str, max_new_tokens: int = 10) -> str:
         # prompt -> tokens -> ids
         input_ids = self.model.encode(prompt)[0].tolist()
 
@@ -45,7 +45,7 @@ class Pipeline(BaseModel):
             # advance the trie cursor
             trie_cursor = trie_cursor["children"][next_token_id]
             # If we completed a valid string, reset cursor to root
-            if trie_cursor["termianl"]:
+            if trie_cursor["terminal"]:
                 trie_cursor = self.tools.trie
 
         return self.model.decode(generated_ids)
