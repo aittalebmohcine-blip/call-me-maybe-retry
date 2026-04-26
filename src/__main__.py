@@ -19,7 +19,7 @@ Available functions:
 {functions_text}
 
 Return ONLY a JSON object:
-{{"name": "...", "parameters": {{...}}}}
+{{"prompt": "What is the sum of 2 and 3?","name": "fn_add_numbers","parameters": {{"a": 2,"b": 3}}
 
 User request:
 {prompt_text}
@@ -43,7 +43,7 @@ def main():
 
     # -- generation pipeline --
     pipline = Pipeline()
-    inhanced_prompt = build_prompt(prompts[1], functions)
+    inhanced_prompt = build_prompt(prompts[2], functions)
     print(pipline.generate(inhanced_prompt))
 
     # -- ouput --
