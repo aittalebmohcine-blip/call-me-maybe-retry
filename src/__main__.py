@@ -13,17 +13,22 @@ def build_prompt(prompt_text: str, functions: List[FunctionDefinition]) -> str:
     )
 
     return f"""
-You are a function calling system.
+You are a function-calling engine.
+Given a user request, select the best matching
+function and extract its arguments.
 
 Available functions:
 {functions_text}
 
-Return ONLY a JSON object:
-{{"prompt": "What is the sum of 2 and 3?","name": "fn_add_numbers","parameters": {{"a": 2,"b": 3}}
+Rules:
+- Output ONLY valid JSON. No explanation, no markdown, no extra text.
+- If no function matches, return: {{"name": "", "parameters": {{}}}}
+- String arguments must be quoted. Number arguments must be unquoted.
 
-User request:
-{prompt_text}
+Output format:
+{{"name": "<function_name>", "parameters": {{<key>: <value>, ...}}}}
 
+User request: {prompt_text}
 Answer:
 """.strip()
 
@@ -43,8 +48,13 @@ def main():
 
     # -- generation pipeline --
     pipline = Pipeline()
-    inhanced_prompt = build_prompt(prompts[2], functions)
-    print(pipline.generate(inhanced_prompt))
+    inhanced_prompt = build_prompt(prompts[-1], functions)
+    print(inhanced_prompt)
+    print("---")
+    ouput = pipline.generate(inhanced_prompt, max_new_tokens=50)
+    start_index = ouput.find("{")
+    end_index = ouput.rfind("}") + 1
+    print(ouput[start_index:end_index])
 
     # -- ouput --
     # format and save ouput
