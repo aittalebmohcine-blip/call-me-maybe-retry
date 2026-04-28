@@ -33,6 +33,40 @@ Answer:
 """.strip()
 
 
+def build_fnname_extractor_prompt(prompt_text: str, functions) -> str:
+    return f"""
+You are a function-calling engine. Given a user request, return the name of the best matching function.
+
+Available functions:
+{functions}
+
+Rules:
+- Output ONLY the function name. No explanation, no markdown, no extra text.
+- If no function matches, output: none
+
+User request: {prompt_text}
+Answer:
+""".strip()
+
+
+def build_args_extractor_prompt(
+    prompt_text: str, function: FunctionDefinition
+) -> str:
+    return f"""
+You are a function-calling engine. Given a user request and a function name, extract the arguments for that function.
+
+Rules:
+- Output ONLY valid JSON. No explanation, no markdown, no extra text.
+- String arguments must be quoted. Number arguments must be unquoted.
+- If no arguments, return: {{}}
+
+Function: {function}
+User request: {prompt_text}
+Answer:
+""".strip()
+    ...
+
+
 def main():
     # -- parsing --
 
@@ -48,13 +82,6 @@ def main():
 
     # -- generation pipeline --
     pipline = Pipeline()
-    inhanced_prompt = build_prompt(prompts[-1], functions)
-    print(inhanced_prompt)
-    print("---")
-    ouput = pipline.generate(inhanced_prompt, max_new_tokens=50)
-    start_index = ouput.find("{")
-    end_index = ouput.rfind("}") + 1
-    print(ouput[start_index:end_index])
 
     # -- ouput --
     # format and save ouput

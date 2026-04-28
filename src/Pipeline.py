@@ -1,13 +1,14 @@
+from pydantic import BaseModel, Field
+
 from llm_sdk import Small_LLM_Model
 
 NEGATIVE_INF = float('-inf')
 
 
-class Pipeline:
-    def __init__(self):
-        self.model = Small_LLM_Model()
+class Pipeline(BaseModel):
+    model: Small_LLM_Model = Field(default=Small_LLM_Model())
 
-    def generate(self, prompt: str, max_new_tokens: int = 50) -> str:
+    def _stage1_extract_name(self, prompt: str, functions, max_new_tokens: int = 50) -> str:
         # prompt -> tokens -> ids
         input_ids = self.model.encode(prompt)[0].tolist()
 
@@ -31,4 +32,30 @@ class Pipeline:
             # next_token_id -> ids
             input_ids.append(next_token_id)
 
-        return self.model.decode(generated_ids)
+        return self.model.decode(generated_ids).strip()
+
+    def _stage2_(self, prompt: str, functions, max_new_tokens: int = 50) -> str:
+        # prompt -> tokens -> ids
+        input_ids = self.model.encode(prompt)[0].tolist()
+
+        # for separating genrated from input ids
+        generated_ids = []
+
+        for _ in range(max_new_tokens):
+            # ids -> logits
+            logits = self.model.get_logits_from_input_ids(input_ids)
+
+            # -----
+            # logits -> filter (inject constrained decoding)
+            #
+            #
+            # -----
+
+            # logits -> next token id
+            next_token_id = logits.index(max(logits))
+            # separate generated ids
+            generated_ids.append(next_token_id)
+            # next_token_id -> ids
+            input_ids.append(next_token_id)
+
+        return self.model.decode(generated_ids).strip()
