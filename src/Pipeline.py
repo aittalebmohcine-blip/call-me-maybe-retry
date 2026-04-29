@@ -1,15 +1,20 @@
 from pydantic import BaseModel, Field
+from typing import List
 
 from llm_sdk import Small_LLM_Model
 
 NEGATIVE_INF = float('-inf')
 
+# Trie node: maps token_id → child node, plus is_terminal flag
+# {"children": {token_id: TrieNode}, "terminal": bool}
+TrieNode = dict
+
+model: Small_LLM_Model = Small_LLM_Model()
+
 
 class Pipeline(BaseModel):
-    model: Small_LLM_Model = Field(default=Small_LLM_Model())
-
-    # Trie node: maps token_id → child node, plus is_terminal flag
-    TrieNode = dict  # {"children": {token_id: TrieNode}, "terminal": bool}
+    functions: List = Field(...,
+                            description="List of function definitions")
 
     def build_trie(self, string_to_ids: dict[str, list[int]]) -> TrieNode:
         root = {"children": {}, "terminal": False}
@@ -27,22 +32,26 @@ class Pipeline(BaseModel):
         """Which token IDs are valid next steps from this trie node?"""
         return set(node["children"].keys())
 
-    def _stage1_extract_name(self, prompt: str, functions, max_new_tokens: int = 50) -> str:
-        valid_function_names = [f.name for f in functions]
+    # ------------------------------------------------------------------
+    # Stage 1: greedy constrained decode → function name
+    # ------------------------------------------------------------------
+
+    def _stage1_extract_name(self, prompt: str, max_new_tokens: int = 50) -> str:
+        valid_function_names = [f.name for f in self.functions]
 
         extract_fnname_prompt = f"""
         you are a function-calling engine.
         Given a user request, return the name of the best matching function.
-        prompt: {prompt}
-        functions: {valid_function_names}
+        user request: {prompt}
+        functions: {self.functions}
         """.strip()
 
-        string_to_ids = {name: self.model.encode(
+        string_to_ids = {name: model.encode(
             name)[0].tolist() for name in valid_function_names}
         trie = self.build_trie(string_to_ids)
 
         # prompt -> tokens -> ids
-        input_ids = self.model.encode(extract_fnname_prompt)[0].tolist()
+        input_ids = model.encode(extract_fnname_prompt)[0].tolist()
 
         # for separating genrated from input ids
         generated_ids = []
@@ -50,7 +59,7 @@ class Pipeline(BaseModel):
         trie_cursor = trie
         for _ in range(max_new_tokens):
             # ids -> logits
-            logits = self.model.get_logits_from_input_ids(input_ids)
+            logits = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
@@ -76,18 +85,22 @@ class Pipeline(BaseModel):
                 break
                 # trie_cursor = trie
 
-        return self.model.decode(generated_ids).strip()
+        return model.decode(generated_ids).strip()
 
-    def _stage2_(self, prompt: str, functions, max_new_tokens: int = 50) -> str:
+    # ------------------------------------------------------------------
+    # Stage 2: per-parameter constrained decode → argument values
+    # ------------------------------------------------------------------
+
+    def _stage2_(self, prompt: str, max_new_tokens: int = 50) -> str:
         # prompt -> tokens -> ids
-        input_ids = self.model.encode(prompt)[0].tolist()
+        input_ids = model.encode(prompt)[0].tolist()
 
         # for separating genrated from input ids
         generated_ids = []
 
         for _ in range(max_new_tokens):
             # ids -> logits
-            logits = self.model.get_logits_from_input_ids(input_ids)
+            logits = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
@@ -102,4 +115,4 @@ class Pipeline(BaseModel):
             # next_token_id -> ids
             input_ids.append(next_token_id)
 
-        return self.model.decode(generated_ids).strip()
+        return model.decode(generated_ids).strip()

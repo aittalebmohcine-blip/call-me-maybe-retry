@@ -81,7 +81,10 @@ def main():
     prompts = parser.parse_prompts()
 
     # -- generation pipeline --
-    pipline = Pipeline()
+    pipline = Pipeline(functions=functions)
+
+    name = pipline._stage1_extract_name(prompts[7])
+    print(name)
 
     # -- ouput --
     # format and save ouput
