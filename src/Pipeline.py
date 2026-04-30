@@ -10,19 +10,13 @@ NEGATIVE_INF = float('-inf')
 TrieNode = dict
 
 model: Small_LLM_Model = Small_LLM_Model()
+NUM_TOKEN_IDS = set(model.encode("0123456789.-+eE\n")[0].tolist())
+FORBIDDEN_STR_TOKEN_IDS = {364, 330}
 
 
 class Pipeline(BaseModel):
     functions_by_name: Dict = Field(...,
                                     description="List of function definitions")
-
-    def _build_numeric_token_ids(self) -> Set[int]:
-        numeric_tokens = "0123456789.-+eE "
-        token_ids = set()
-        for token in numeric_tokens:
-            ids = model.encode(token)[0].tolist()
-            token_ids.update(ids)
-        return token_ids
 
     def build_trie(self, string_to_ids: dict[str, list[int]]) -> TrieNode:
         root = {"children": {}, "terminal": False}
@@ -122,7 +116,7 @@ Answer:
                 f"User request: \"{prompt}\"\n\n"
                 # f"Extract ONLY the value for the parameter '{param_name}'.\n"
                 f"- Do not output the other parameters.\n"
-                # f"- Do not output the parameter name, just the raw value.\n"
+                f"- Do not output the parameter name, just the raw value ended with a new line.\n"
                 f"- Do not perform any calculation.\n"
                 f"Example: if the request is 'sum of 1 and 2' and param is 'b', output: 20\n"
                 f"Value of '{param_name}':"
@@ -130,7 +124,7 @@ Answer:
 
             if param_type == "number":
                 value_str = self._extract_string_arg(
-                    sub_prompt, self._build_numeric_token_ids())
+                    param_type, sub_prompt, NUM_TOKEN_IDS)
                 try:
                     extracted[param_name] = int(
                         value_str) if value_str.isdigit() else float(value_str)
@@ -138,30 +132,37 @@ Answer:
                     # or handle error as needed
                     extracted[param_name] = value_str
             else:
-                extracted[param_name] = "..."
+
+                value_str = self._extract_string_arg(
+                    param_type, sub_prompt, FORBIDDEN_STR_TOKEN_IDS)
+                extracted[param_name] = str(value_str)
         return extracted
 
-    def _extract_string_arg(self, prompt: str, allowed_token_ids: Set[int], max_new_tokens: int = 5) -> str:
+    def _extract_string_arg(self, param_type: str, prompt: str, filter_ids: Set[int], max_new_tokens: int = 5) -> str:
         # prompt -> tokens -> ids
         input_ids = model.encode(prompt)[0].tolist()
 
         # for separating genrated from input ids
         generated_ids = []
 
+        eol_id = model._tokenizer.encode("\n")[0]
         for _ in range(max_new_tokens):
             # ids -> logits
             logits = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
-            masked_logits = [
-                logits[i] if i in allowed_token_ids else NEGATIVE_INF for i in range(len(logits))]
+            if param_type == "number":
+                masked_logits = [
+                    logits[i] if i in filter_ids else NEGATIVE_INF for i in range(len(logits))]
+            else:
+                masked_logits = [
+                    logits[i] if i not in filter_ids else NEGATIVE_INF for i in range(len(logits))]
             # -----
 
             # logits -> next token id
             next_token_id = logits.index(max(masked_logits))
-            eos_id = model._tokenizer.eos_token_id
-            if next_token_id == eos_id:
+            if next_token_id == eol_id or "\n" in model.decode([next_token_id]):
                 break
             # separate generated ids
             generated_ids.append(next_token_id)

@@ -83,7 +83,7 @@ def main():
     # -- generation pipeline --
     pipline = Pipeline(functions_by_name=functions_by_name)
 
-    for prompt in prompts:
+    for prompt in prompts[-3:]:
         name = pipline._stage1_extract_name(prompt)
         parameters = pipline._stage2_extract_args(prompt, name)
         print(name)
