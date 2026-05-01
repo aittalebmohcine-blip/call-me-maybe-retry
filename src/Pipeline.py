@@ -86,14 +86,16 @@ class Pipeline(BaseModel):
     stack: list = Field(
         default=[], description="Stack to manage nested structures")
 
-    def allowed_tokens(self, state, stack):
+    def allowed_tokens(self, state, stack, cursor):
         allowed_strings = []
 
         if state == State.START:
             allowed_strings = ["{"]
 
         elif state == State.EXPECT_NAME_KEY:
-            allowed_strings = ['"name"']
+            # all tokens that can continue from here
+            return cursor["children"]
+            # allowed_strings = ['"name"']
 
         elif state == State.EXPECT_COLON_1:
             allowed_strings = [":"]
@@ -128,7 +130,7 @@ class Pipeline(BaseModel):
 
         for text in allowed_strings:
             # or tokenizer equivalent
-            token_ids = model.encode(text).tolist()
+            token_ids = model.encode(text)[0].tolist()
 
             # IMPORTANT: flatten and union all tokens
             for tid in token_ids:
@@ -136,7 +138,7 @@ class Pipeline(BaseModel):
 
         return allowed_token_ids
 
-    def transition(self, state, token_id, stack):
+    def transition(self, state, token_id, stack, cursor, root):
         token = model.decode(token_id)
 
         if state == State.START and token == "{":
@@ -144,7 +146,12 @@ class Pipeline(BaseModel):
             return State.EXPECT_NAME_KEY, stack
 
         if state == State.EXPECT_NAME_KEY:  # and token == '"name"':
-            return State.EXPECT_COLON_1, stack
+            if cursor["terminal"]:
+                print("before: ", cursor["children"])
+                cursor = root
+                print("after: ", cursor["children"])
+                return State.EXPECT_COLON_1, stack
+            return State.EXPECT_NAME_KEY, stack
 
         if state == State.EXPECT_COLON_1 and token == ":":
             return State.EXPECT_NAME_VALUE, stack
@@ -178,14 +185,14 @@ class Pipeline(BaseModel):
     def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
 
         # build the trie for function names
-        valid_strings = list(self.functions_by_name.keys())
+        valid_strings = [f'"{name}"' for name in self.functions_by_name.keys()]
         # also allow the parameters key
-        valid_strings += ['"parameters"', '"name']
+        valid_strings += ['"parameters"', '"name"']
         trie = {"children": {}, "terminal": False}
         node = trie
 
         for name in valid_strings:
-            for id in model.encode(name).tolist():
+            for id in model.encode(name)[0].tolist():
                 if id not in node["children"]:
                     node["children"][id] = {
                         "children": {}, "terminal": False}
@@ -198,19 +205,21 @@ class Pipeline(BaseModel):
 
         state = State.START
         stack = []
+        cursor = trie
+        print(cursor["children"])
         for _ in range(max_new_tokens):
             # ids -> logits
             logits = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
-            allowed_token_ids = self.allowed_tokens(state, stack)
+            allowed_token_ids = self.allowed_tokens(state, stack, cursor)
             masked_logits = [
                 log if idx in allowed_token_ids else NEGATIVE_INF for idx, log in enumerate(logits)]
             # -----
 
             # logits -> next token id
-            next_token_id = logits.index(max(masked_logits))
+            next_token_id = masked_logits.index(max(masked_logits))
 
             # separate generated ids
             generated_ids.append(next_token_id)
@@ -219,6 +228,12 @@ class Pipeline(BaseModel):
             input_ids.append(next_token_id)
 
             # update state
-            state, stack = self.transition(state, next_token_id, stack)
+            state, stack = self.transition(
+                state, next_token_id, stack, cursor, trie)
+
+            if state is State.EXPECT_NAME_KEY and next_token_id in cursor["children"]:
+                cursor = cursor["children"][next_token_id]
+            if state == State.DONE:
+                break
 
         return model.decode(generated_ids).strip()
