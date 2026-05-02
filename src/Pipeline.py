@@ -224,15 +224,10 @@ class Pipeline(BaseModel):
             self._print_trie_children(child, tokenizer, indent + extension)
     # -------
 
-    def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
-
-        # build the trie for function names
-        valid_strings = [f'"{name}"' for name in self.functions_by_name.keys()]
-        # also allow the parameters key
-        valid_strings += ['"parameters"', '"name"']
+    def build_trie(self, strings):
         trie = {"children": {}, "terminal": False}
 
-        for name in valid_strings:
+        for name in strings:
             node = trie
             for id in model.encode(name)[0].tolist():
                 if id not in node["children"]:
@@ -240,14 +235,23 @@ class Pipeline(BaseModel):
                         "children": {}, "terminal": False}
                 node = node["children"][id]
             node["terminal"] = True
-        # self._print_trie_children(trie, model, "")
+
+        return trie
+
+    def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
+
+        # build the trie for function names
+        valid_strings = [f'"{name}"' for name in self.functions_by_name.keys()]
+        # also allow the parameters key
+        valid_strings += ['"parameters"', '"name"']
+        root_trie = self.build_trie(valid_strings)
 
         input_ids = model.encode(prompt)[0].tolist()
         generated_ids = []
 
         state = State.START
         stack = []
-        cur_state = {"cursor": trie}
+        cur_state = {"cursor": root_trie}
         current_function_name_ids = []
         current_function_name = None
         function_schema = None
@@ -293,7 +297,7 @@ class Pipeline(BaseModel):
 
             # update state
             state, stack = self.transition(
-                state, next_token_id, stack, cur_state, trie)
+                state, next_token_id, stack, cur_state, root_trie)
 
             states = [State.EXPECT_NAME_KEY,
                       State.EXPECT_NAME_VALUE, State.EXPECT_PARAMETERS_KEY]
