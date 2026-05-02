@@ -20,7 +20,11 @@ class State(Enum):
 
     EXPECT_PARAMETERS_KEY = auto()
     EXPECT_COLON_2 = auto()
+
     EXPECT_PARAMETERS_OPEN = auto()
+    EXPECT_PARAM_KEY = auto()
+    EXPECT_PARAM_COLON = auto()
+    EXPECT_PARAM_VALUE = auto()
     EXPECT_PARAMETERS_CLOSE = auto()
 
     EXPECT_FINAL_CLOSE = auto()
@@ -31,48 +35,48 @@ class State(Enum):
 # ------------------------
 # buudling the trie for fast id look up
 # ------------------------
-path = model.get_path_to_vocab_file()
-
-with open(path, "r", encoding="utf-8") as f:
-    vocab = json.load(f)
-
-
-class TrieNode:
-    def __init__(self):
-        self.children = {}
-        self.token_ids = []
-
-
-class Trie:
-    def __init__(self):
-        self.root = TrieNode()
-
-    def insert(self, token_text, token_id):
-        node = self.root
-
-        for ch in token_text:
-            if ch not in node.children:
-                node.children[ch] = TrieNode()
-
-            node = node.children[ch]
-            node.token_ids.append(token_id)
-
-    def lookup(self, prefix):
-        node = self.root
-
-        for ch in prefix:
-            if ch not in node.children:
-                return []
-
-            node = node.children[ch]
-
-        return node.token_ids
-
-
-trie = Trie()
-
-for token_text, token_id in vocab.items():
-    trie.insert(token_text, token_id)
+# path = model.get_path_to_vocab_file()
+#
+# with open(path, "r", encoding="utf-8") as f:
+#    vocab = json.load(f)
+#
+#
+# class TrieNode:
+#    def __init__(self):
+#        self.children = {}
+#        self.token_ids = []
+#
+#
+# class Trie:
+#    def __init__(self):
+#        self.root = TrieNode()
+#
+#    def insert(self, token_text, token_id):
+#        node = self.root
+#
+#        for ch in token_text:
+#            if ch not in node.children:
+#                node.children[ch] = TrieNode()
+#
+#            node = node.children[ch]
+#            node.token_ids.append(token_id)
+#
+#    def lookup(self, prefix):
+#        node = self.root
+#
+#        for ch in prefix:
+#            if ch not in node.children:
+#                return []
+#
+#            node = node.children[ch]
+#
+#        return node.token_ids
+#
+#
+# trie = Trie()
+#
+# for token_text, token_id in vocab.items():
+#    trie.insert(token_text, token_id)
 
 # --------------------------
 # pipline
@@ -86,7 +90,7 @@ class Pipeline(BaseModel):
     stack: list = Field(
         default=[], description="Stack to manage nested structures")
 
-    def allowed_tokens(self, state, stack, cur_state):
+    def allowed_tokens(self, state, stack, cur_state, function_schema):
         allowed_strings = []
 
         if state == State.START:
@@ -117,6 +121,9 @@ class Pipeline(BaseModel):
 
         elif state == State.EXPECT_PARAMETERS_OPEN:
             allowed_strings = ["{"]
+
+        elif state == State.EXPECT_PARAM_KEY:
+            allowed_strings = [":", '"'] + list(function_schema.keys())
 
         elif state == State.EXPECT_PARAMETERS_CLOSE:
             allowed_strings = ["}"]
@@ -176,7 +183,13 @@ class Pipeline(BaseModel):
 
         if state == State.EXPECT_PARAMETERS_OPEN and token == "{":
             stack.append("OBJECT")
-            return State.EXPECT_PARAMETERS_CLOSE, stack
+            return State.EXPECT_PARAM_KEY, stack
+            # return State.EXPECT_PARAMETERS_CLOSE, stack
+
+        if state == State.EXPECT_PARAM_KEY:
+            if token == ":":
+                return State.EXPECT_PARAMETERS_CLOSE, stack
+            return State.EXPECT_PARAM_KEY, stack
 
         if state == State.EXPECT_PARAMETERS_CLOSE and token == "}":
             stack.pop()
@@ -227,7 +240,7 @@ class Pipeline(BaseModel):
                         "children": {}, "terminal": False}
                 node = node["children"][id]
             node["terminal"] = True
-        self._print_trie_children(trie, model, "")
+        # self._print_trie_children(trie, model, "")
 
         input_ids = model.encode(prompt)[0].tolist()
         generated_ids = []
@@ -235,6 +248,9 @@ class Pipeline(BaseModel):
         state = State.START
         stack = []
         cur_state = {"cursor": trie}
+        current_function_name_ids = []
+        current_function_name = None
+        function_schema = None
         for _ in range(max_new_tokens):
             # ids -> logits
             logits = model.get_logits_from_input_ids(input_ids)
@@ -242,7 +258,10 @@ class Pipeline(BaseModel):
             # -----
             # logits -> filter (inject constrained decoding)
             allowed_token_ids = self.allowed_tokens(
-                state, stack, cur_state)
+                state, stack, cur_state, function_schema)
+            if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
+                # if "name" is allowed, prioritize it
+                allowed_token_ids = {model.encode('"name"')[0][0].item()}
             masked_logits = [
                 log if idx in allowed_token_ids
                 else NEGATIVE_INF
@@ -259,6 +278,19 @@ class Pipeline(BaseModel):
             # next_token_id -> ids
             input_ids.append(next_token_id)
 
+            # save the function name
+            if state == State.EXPECT_NAME_VALUE:
+                current_function_name_ids.append(next_token_id)
+                if cur_state["cursor"]["children"][next_token_id]["terminal"]:
+                    current_function_name = model.decode(
+                        current_function_name_ids).strip('"')
+                    print("Selected function:", current_function_name)
+            # load the function schema if we just completed the function name
+            if function_schema is None and current_function_name is not None:
+                function_schema = self.load_function_schema(
+                    current_function_name)
+                print("Function schema:", function_schema)
+
             # update state
             state, stack = self.transition(
                 state, next_token_id, stack, cur_state, trie)
@@ -272,3 +304,6 @@ class Pipeline(BaseModel):
                 break
 
         return model.decode(generated_ids).strip()
+
+    def load_function_schema(self, name: str):
+        return self.functions_by_name[name].parameters
