@@ -86,7 +86,7 @@ class Pipeline(BaseModel):
     stack: list = Field(
         default=[], description="Stack to manage nested structures")
 
-    def allowed_tokens(self, state, stack, cursor):
+    def allowed_tokens(self, state, stack, cur_state):
         allowed_strings = []
 
         if state == State.START:
@@ -94,7 +94,7 @@ class Pipeline(BaseModel):
 
         elif state == State.EXPECT_NAME_KEY:
             # all tokens that can continue from here
-            return cursor["children"]
+            return cur_state["cursor"]["children"]
             # allowed_strings = ['"name"']
 
         elif state == State.EXPECT_COLON_1:
@@ -102,13 +102,15 @@ class Pipeline(BaseModel):
 
         elif state == State.EXPECT_NAME_VALUE:
             # function names as strings
-            allowed_strings = list(self.functions_by_name.keys())
+            return cur_state["cursor"]["children"]
+            # allowed_strings = list(self.functions_by_name.keys())
 
         elif state == State.EXPECT_COMMA:
             allowed_strings = [","]
 
         elif state == State.EXPECT_PARAMETERS_KEY:
-            allowed_strings = ['"parameters"']
+            return cur_state["cursor"]["children"]
+            # allowed_strings = ['"parameters"']
 
         elif state == State.EXPECT_COLON_2:
             allowed_strings = [":"]
@@ -138,7 +140,7 @@ class Pipeline(BaseModel):
 
         return allowed_token_ids
 
-    def transition(self, state, token_id, stack, cursor, root):
+    def transition(self, state, token_id, stack, cur_state, root):
         token = model.decode(token_id)
 
         if state == State.START and token == "{":
@@ -146,10 +148,8 @@ class Pipeline(BaseModel):
             return State.EXPECT_NAME_KEY, stack
 
         if state == State.EXPECT_NAME_KEY:  # and token == '"name"':
-            if cursor["terminal"]:
-                print("before: ", cursor["children"])
-                cursor = root
-                print("after: ", cursor["children"])
+            if cur_state["cursor"]["children"][token_id]["terminal"]:
+                cur_state["cursor"] = root
                 return State.EXPECT_COLON_1, stack
             return State.EXPECT_NAME_KEY, stack
 
@@ -157,13 +157,19 @@ class Pipeline(BaseModel):
             return State.EXPECT_NAME_VALUE, stack
 
         if state == State.EXPECT_NAME_VALUE:
-            return State.EXPECT_COMMA, stack
+            if cur_state["cursor"]["children"][token_id]["terminal"]:
+                cur_state["cursor"] = root
+                return State.EXPECT_COMMA, stack
+            return State.EXPECT_NAME_VALUE, stack
 
         if state == State.EXPECT_COMMA and token == ",":
             return State.EXPECT_PARAMETERS_KEY, stack
 
         if state == State.EXPECT_PARAMETERS_KEY:  # and token == '"parameters"':
-            return State.EXPECT_COLON_2, stack
+            if cur_state["cursor"]["children"][token_id]["terminal"]:
+                cur_state["cursor"] = root
+                return State.EXPECT_COLON_2, stack
+            return State.EXPECT_PARAMETERS_KEY, stack
 
         if state == State.EXPECT_COLON_2 and token == ":":
             return State.EXPECT_PARAMETERS_OPEN, stack
@@ -182,6 +188,29 @@ class Pipeline(BaseModel):
 
         raise ValueError("Invalid transition")
 
+    # -------
+    # helper to print trie (for debugging)
+    # -------
+    def _print_trie_children(self, node, tokenizer, indent):
+        children = node["children"]
+        keys = list(children.keys())
+        for i, token_id in enumerate(keys):
+            child = children[token_id]
+            is_last = (i == len(keys) - 1)
+            connector = "└── " if is_last else "├── "
+            extension = "    " if is_last else "│   "
+
+            if tokenizer is not None:
+                token_str = tokenizer.decode([token_id])
+                label = f"[{token_id}] '{token_str}'"
+            else:
+                label = f"[{token_id}]"
+
+            marker = " ●" if child["terminal"] else ""
+            print(f"{indent}{connector}{label}{marker}")
+            self._print_trie_children(child, tokenizer, indent + extension)
+    # -------
+
     def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
 
         # build the trie for function names
@@ -189,31 +218,31 @@ class Pipeline(BaseModel):
         # also allow the parameters key
         valid_strings += ['"parameters"', '"name"']
         trie = {"children": {}, "terminal": False}
-        node = trie
 
         for name in valid_strings:
+            node = trie
             for id in model.encode(name)[0].tolist():
                 if id not in node["children"]:
                     node["children"][id] = {
                         "children": {}, "terminal": False}
                 node = node["children"][id]
-                node["terminal"] = True
-            node = trie
+            node["terminal"] = True
+        self._print_trie_children(trie, model, "")
 
         input_ids = model.encode(prompt)[0].tolist()
         generated_ids = []
 
         state = State.START
         stack = []
-        cursor = trie
-        print(cursor["children"])
+        cur_state = {"cursor": trie}
         for _ in range(max_new_tokens):
             # ids -> logits
             logits = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
-            allowed_token_ids = self.allowed_tokens(state, stack, cursor)
+            allowed_token_ids = self.allowed_tokens(
+                state, stack, cur_state)
             masked_logits = [
                 log if idx in allowed_token_ids else NEGATIVE_INF for idx, log in enumerate(logits)]
             # -----
@@ -229,10 +258,10 @@ class Pipeline(BaseModel):
 
             # update state
             state, stack = self.transition(
-                state, next_token_id, stack, cursor, trie)
+                state, next_token_id, stack, cur_state, trie)
 
-            if state is State.EXPECT_NAME_KEY and next_token_id in cursor["children"]:
-                cursor = cursor["children"][next_token_id]
+            if state in [State.EXPECT_NAME_KEY, State.EXPECT_NAME_VALUE, State.EXPECT_PARAMETERS_KEY] and next_token_id in cur_state["cursor"]["children"]:
+                cur_state["cursor"] = cur_state["cursor"]["children"][next_token_id]
             if state == State.DONE:
                 break
 

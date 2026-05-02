@@ -49,7 +49,7 @@ def main():
     # -- generation pipeline --
     pipline = Pipeline(functions_by_name=functions_by_name)
 
-    built_prompt = build_prompt(prompts[-2], functions)
+    built_prompt = build_prompt(prompts[2], functions)
     output = pipline.stage1(built_prompt)
     print("Output:\n", output)
 
