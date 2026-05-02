@@ -244,7 +244,10 @@ class Pipeline(BaseModel):
             allowed_token_ids = self.allowed_tokens(
                 state, stack, cur_state)
             masked_logits = [
-                log if idx in allowed_token_ids else NEGATIVE_INF for idx, log in enumerate(logits)]
+                log if idx in allowed_token_ids
+                else NEGATIVE_INF
+                for idx, log in enumerate(logits)
+            ]
             # -----
 
             # logits -> next token id
@@ -260,8 +263,11 @@ class Pipeline(BaseModel):
             state, stack = self.transition(
                 state, next_token_id, stack, cur_state, trie)
 
-            if state in [State.EXPECT_NAME_KEY, State.EXPECT_NAME_VALUE, State.EXPECT_PARAMETERS_KEY] and next_token_id in cur_state["cursor"]["children"]:
-                cur_state["cursor"] = cur_state["cursor"]["children"][next_token_id]
+            states = [State.EXPECT_NAME_KEY,
+                      State.EXPECT_NAME_VALUE, State.EXPECT_PARAMETERS_KEY]
+            children = cur_state["cursor"]["children"]
+            if state in states and next_token_id in children:
+                cur_state["cursor"] = children[next_token_id]
             if state == State.DONE:
                 break
 
