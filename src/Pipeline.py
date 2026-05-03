@@ -1,7 +1,6 @@
 from enum import Enum, auto
 from pydantic import BaseModel, Field
 from typing import Dict
-import json
 
 from llm_sdk import Small_LLM_Model
 
@@ -22,10 +21,12 @@ class State(Enum):
     EXPECT_COLON_2 = auto()
 
     EXPECT_PARAMETERS_OPEN = auto()
-    EXPECT_PARAM_KEY = auto()
+    EXPECT_PARAM_KEY_OPEN = auto()
+    EXPECT_PARAM_NAME = auto()
+    EXPECT_PARAM_KEY_CLOSE = auto()
     EXPECT_PARAM_COLON = auto()
     EXPECT_PARAM_VALUE = auto()
-    EXPECT_PARAMETERS_CLOSE = auto()
+    EXPECT_NEXT_PARAM_OR_CLOSE = auto()
 
     EXPECT_FINAL_CLOSE = auto()
 
@@ -122,10 +123,10 @@ class Pipeline(BaseModel):
         elif state == State.EXPECT_PARAMETERS_OPEN:
             allowed_strings = ["{"]
 
-        elif state == State.EXPECT_PARAM_KEY:
-            allowed_strings = [":", '"'] + list(function_schema.keys())
+        elif state == State.EXPECT_PARAM_KEY_OPEN:
+            allowed_strings = ['"']
 
-        elif state == State.EXPECT_PARAMETERS_CLOSE:
+        elif state == State.EXPECT_NEXT_PARAM_OR_CLOSE:
             allowed_strings = ["}"]
 
         elif state == State.EXPECT_FINAL_CLOSE:
@@ -183,15 +184,13 @@ class Pipeline(BaseModel):
 
         if state == State.EXPECT_PARAMETERS_OPEN and token == "{":
             stack.append("OBJECT")
-            return State.EXPECT_PARAM_KEY, stack
+            return State.EXPECT_PARAM_KEY_OPEN, stack
             # return State.EXPECT_PARAMETERS_CLOSE, stack
 
-        if state == State.EXPECT_PARAM_KEY:
-            if token == ":":
-                return State.EXPECT_PARAMETERS_CLOSE, stack
-            return State.EXPECT_PARAM_KEY, stack
+        if state == State.EXPECT_PARAM_KEY_OPEN and token == '"':
+            return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
 
-        if state == State.EXPECT_PARAMETERS_CLOSE and token == "}":
+        if state == State.EXPECT_NEXT_PARAM_OR_CLOSE and token == "}":
             stack.pop()
             return State.EXPECT_FINAL_CLOSE, stack
 
