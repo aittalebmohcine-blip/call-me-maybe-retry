@@ -24,6 +24,7 @@ Rules:
 - Output ONLY valid JSON. No explanation, no markdown, no extra text.
 - If no function matches, return: {{"name": "", "parameters": {{}}}}
 - String arguments must be quoted. Number arguments must be unquoted.
+- Make sure all parameters required by the function are included in the output, separated by commas.
 
 Output format:
 {{"name": "<function_name>", "parameters": {{<key>: <value>, ...}}}}
@@ -49,8 +50,8 @@ def main():
     # -- generation pipeline --
     pipline = Pipeline(functions_by_name=functions_by_name)
 
-    built_prompt = build_prompt(prompts[4], functions)
-    output = pipline.stage1(built_prompt, max_new_tokens=50)
+    built_prompt = build_prompt(prompts[-1], functions)
+    output = pipline.stage1(built_prompt, max_new_tokens=100)
     print("Output:\n", output)
     # for prompt in prompts:
     #    built_prompt = build_prompt(prompt, functions)
