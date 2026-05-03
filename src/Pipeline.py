@@ -1,6 +1,7 @@
 from enum import Enum, auto
 from pydantic import BaseModel, Field
 from typing import Dict
+import json
 
 from llm_sdk import Small_LLM_Model
 
@@ -126,6 +127,19 @@ class Pipeline(BaseModel):
         elif state == State.EXPECT_PARAM_KEY_OPEN:
             allowed_strings = ['"']
 
+        elif state == State.EXPECT_PARAM_NAME:
+            return cur_state["cursor"]["children"]
+
+        elif state == State.EXPECT_PARAM_KEY_CLOSE:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_PARAM_COLON:
+            allowed_strings = [":"]
+
+        elif state == State.EXPECT_PARAM_VALUE:
+            # return vocabulary of the model, but we will rely on the transition function to stay in this state until a valid value is formed
+            return vocab.values()
+
         elif state == State.EXPECT_NEXT_PARAM_OR_CLOSE:
             allowed_strings = ["}"]
 
@@ -148,7 +162,7 @@ class Pipeline(BaseModel):
 
         return allowed_token_ids
 
-    def transition(self, state, token_id, stack, cur_state, root):
+    def transition(self, state, token_id, stack, cur_state, root, parameter_trie):
         token = model.decode(token_id)
 
         if state == State.START and token == "{":
@@ -188,7 +202,23 @@ class Pipeline(BaseModel):
             # return State.EXPECT_PARAMETERS_CLOSE, stack
 
         if state == State.EXPECT_PARAM_KEY_OPEN and token == '"':
-            return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
+            cur_state["cursor"] = parameter_trie
+            return State.EXPECT_PARAM_NAME, stack
+
+        if state == State.EXPECT_PARAM_NAME:
+            if cur_state["cursor"]["children"][token_id]["terminal"]:
+                cur_state["cursor"] = parameter_trie
+                return State.EXPECT_PARAM_KEY_CLOSE, stack
+            return State.EXPECT_PARAM_NAME, stack
+
+        if state == State.EXPECT_PARAM_KEY_CLOSE and token == '"':
+            return State.EXPECT_PARAM_COLON, stack
+
+        if state == State.EXPECT_PARAM_COLON and token == ":":
+            return State.EXPECT_PARAM_VALUE, stack
+
+        if state == State.EXPECT_PARAM_VALUE:
+            return State.EXPECT_PARAM_VALUE, stack
 
         if state == State.EXPECT_NEXT_PARAM_OR_CLOSE and token == "}":
             stack.pop()
@@ -245,6 +275,9 @@ class Pipeline(BaseModel):
         valid_strings += ['"parameters"', '"name"']
         root_trie = self.build_trie(valid_strings)
 
+        # will build this after we know the function
+        parameter_trie = None
+
         input_ids = model.encode(prompt)[0].tolist()
         generated_ids = []
 
@@ -260,20 +293,28 @@ class Pipeline(BaseModel):
 
             # -----
             # logits -> filter (inject constrained decoding)
-            allowed_token_ids = self.allowed_tokens(
-                state, stack, cur_state, function_schema)
-            if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
-                # if "name" is allowed, prioritize it
-                allowed_token_ids = {model.encode('"name"')[0][0].item()}
-            masked_logits = [
-                log if idx in allowed_token_ids
-                else NEGATIVE_INF
-                for idx, log in enumerate(logits)
-            ]
+            if state == State.EXPECT_PARAM_VALUE:
+                masked_logits = logits.copy()
+            else:
+                allowed_token_ids = self.allowed_tokens(
+                    state, stack, cur_state, function_schema)
+                if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
+                    # if "name" is allowed, prioritize it
+                    allowed_token_ids = {model.encode('"name"')[0][0].item()}
+                masked_logits = [
+                    log if idx in allowed_token_ids
+                    else NEGATIVE_INF
+                    for idx, log in enumerate(logits)
+                ]
             # -----
 
             # logits -> next token id
             next_token_id = masked_logits.index(max(masked_logits))
+            # print state allowed tokens and next token for debugging
+            print(f"State: {state.name}", "next token:",
+                  model.decode([next_token_id]))
+            # print(f"State: {state.name}", "allowed tokens:", [model.decode(
+            #    [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
 
             # separate generated ids
             generated_ids.append(next_token_id)
@@ -287,16 +328,28 @@ class Pipeline(BaseModel):
                 if cur_state["cursor"]["children"][next_token_id]["terminal"]:
                     current_function_name = model.decode(
                         current_function_name_ids).strip('"')
-                    print("Selected function:", current_function_name)
             # load the function schema if we just completed the function name
             if function_schema is None and current_function_name is not None:
                 function_schema = self.load_function_schema(
                     current_function_name)
-                print("Function schema:", function_schema)
+
+                # build the trie for parameters
+                parameter_trie = self.build_trie(
+                    list(function_schema.keys()))
+                # cur_state["cursor"] = parameter_trie
+                # for debugging
+                # print("Parameter trie:")
+                # self._print_trie_children(parameter_trie, model, "")
 
             # update state
             state, stack = self.transition(
-                state, next_token_id, stack, cur_state, root_trie)
+                state,
+                next_token_id,
+                stack,
+                cur_state,
+                root_trie,
+                parameter_trie
+            )
 
             states = [State.EXPECT_NAME_KEY,
                       State.EXPECT_NAME_VALUE, State.EXPECT_PARAMETERS_KEY]
