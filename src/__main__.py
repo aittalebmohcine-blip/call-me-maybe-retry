@@ -14,24 +14,19 @@ def build_prompt(prompt_text: str, functions: List[FunctionDefinition]) -> str:
     )
 
     return f"""
-You are a function-calling engine.
-Given a user request, select the best matching
-function and extract its arguments.
+You are a function-calling engine. Output ONLY valid JSON, no explanation.
 
-Available functions:
+Functions:
 {functions_text}
 
 Rules:
-- Output ONLY valid JSON. No explanation, no markdown, no extra text.
-- If no function matches, return: {{"name": "", "parameters": {{}}}}
-- String arguments must be quoted. Number arguments must be unquoted.
-- Make sure all parameters required by the function are included in the output, separated by commas.
+- If no function matches: {{"name": "", "parameters": {{}}}}
+- String args quoted, number args unquoted.
 
-Output format:
-{{"name": "<function_name>", "parameters": {{<key>: <value>, ...}}}}
+Output: {{"name": "<function_name>", "parameters": {{<key>: <value>, ...}}}}
 
-User request: {prompt_text}
-Answer:
+Request: {prompt_text}
+JSON:
 """.strip()
 
 

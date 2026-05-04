@@ -10,27 +10,49 @@ model: Small_LLM_Model = Small_LLM_Model()
 
 
 class State(Enum):
+    # root
     START = auto()
 
-    EXPECT_NAME_KEY = auto()
-    EXPECT_COLON_1 = auto()
-    EXPECT_NAME_VALUE = auto()
+    # "name" key
+    EXPECT_NAME_KEY_OPEN = auto()
+    EXPECT_NAME_KEY_BODY = auto()
+    EXPECT_NAME_KEY_CLOSE = auto()
 
-    EXPECT_COMMA = auto()
+    EXPECT_COLON_AFTER_NAME_KEY = auto()
 
-    EXPECT_PARAMETERS_KEY = auto()
-    EXPECT_COLON_2 = auto()
+    # "name" value (function name)
+    EXPECT_NAME_VALUE_OPEN = auto()
+    EXPECT_NAME_VALUE_BODY = auto()
+    EXPECT_NAME_VALUE_CLOSE = auto()
 
-    EXPECT_PARAMETERS_OPEN = auto()
+    EXPECT_COMMA_AFTER_NAME = auto()
+
+    # "parameters" key
+    EXPECT_PARAMS_KEY_OPEN = auto()
+    EXPECT_PARAMS_KEY_BODY = auto()
+    EXPECT_PARAMS_KEY_CLOSE = auto()
+
+    EXPECT_COLON_AFTER_PARAMS_KEY = auto()
+
+    # parameters object
+    EXPECT_PARAMS_OBJECT_OPEN = auto()
+
+    # parameter key
     EXPECT_PARAM_KEY_OPEN = auto()
-    EXPECT_PARAM_NAME = auto()
+    EXPECT_PARAM_KEY_BODY = auto()
     EXPECT_PARAM_KEY_CLOSE = auto()
-    EXPECT_PARAM_COLON = auto()
-    EXPECT_STRING_OPEN = auto()
-    EXPECT_STRING_BODY = auto()
-    EXPECT_NEXT_PARAM_OR_CLOSE = auto()
 
-    EXPECT_FINAL_CLOSE = auto()
+    EXPECT_COLON_AFTER_PARAM_KEY = auto()
+
+    # parameter value (string only for now)
+    EXPECT_PARAM_VALUE_OPEN = auto()
+    EXPECT_PARAM_VALUE_BODY = auto()
+    EXPECT_PARAM_VALUE_CLOSE = auto()
+
+    EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE = auto()
+
+    # final
+    EXPECT_FINAL_OBJECT_CLOSE = auto()
 
     DONE = auto()
 
@@ -101,55 +123,90 @@ class Pipeline(BaseModel):
     def allowed_tokens(self, state, cur_state):
         allowed_strings = []
 
+        # root
         if state == State.START:
             allowed_strings = ["{"]
 
-        elif state == State.EXPECT_NAME_KEY:
-            # all tokens that can continue from here
+        # ----"name" key-----
+        elif state == State.EXPECT_NAME_KEY_OPEN:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_NAME_KEY_BODY:
             return cur_state["cursor"]["children"]
 
-        elif state == State.EXPECT_COLON_1:
+        elif state == State.EXPECT_NAME_KEY_CLOSE:
+            allowed_strings = ['"']
+        # --------
+
+        elif state == State.EXPECT_COLON_AFTER_NAME_KEY:
             allowed_strings = [":"]
 
-        elif state == State.EXPECT_NAME_VALUE:
-            # function names as strings
+        # ----"name" value (function name)----
+        elif state == State.EXPECT_NAME_VALUE_OPEN:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_NAME_VALUE_BODY:
             return cur_state["cursor"]["children"]
 
-        elif state == State.EXPECT_COMMA:
+        elif state == State.EXPECT_NAME_VALUE_CLOSE:
+            allowed_strings = ['"']
+        # --------
+
+        elif state == State.EXPECT_COMMA_AFTER_NAME:
             allowed_strings = [","]
 
-        elif state == State.EXPECT_PARAMETERS_KEY:
+        # ----"parameters" key----
+        elif state == State.EXPECT_PARAMS_KEY_OPEN:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_PARAMS_KEY_BODY:
             return cur_state["cursor"]["children"]
 
-        elif state == State.EXPECT_COLON_2:
+        elif state == State.EXPECT_PARAMS_KEY_CLOSE:
+            allowed_strings = ['"']
+        # --------
+
+        elif state == State.EXPECT_COLON_AFTER_PARAMS_KEY:
             allowed_strings = [":"]
 
-        elif state == State.EXPECT_PARAMETERS_OPEN:
+        # ----parameters object----
+        elif state == State.EXPECT_PARAMS_OBJECT_OPEN:
             allowed_strings = ["{"]
+        # --------
 
+        # ----parameter key----
         elif state == State.EXPECT_PARAM_KEY_OPEN:
             self.remaining_prams_counter -= 1
             allowed_strings = ['"']
 
-        elif state == State.EXPECT_PARAM_NAME:
+        elif state == State.EXPECT_PARAM_KEY_BODY:
             return cur_state["cursor"]["children"]
 
         elif state == State.EXPECT_PARAM_KEY_CLOSE:
             allowed_strings = ['"']
 
-        elif state == State.EXPECT_PARAM_COLON:
+        elif state == State.EXPECT_COLON_AFTER_PARAM_KEY:
             allowed_strings = [":"]
+        # --------
 
-        elif state == State.EXPECT_STRING_OPEN:
+        # ----parameter value (string only for now)----
+        elif state == State.EXPECT_PARAM_VALUE_OPEN:
             allowed_strings = ['"']
 
-        elif state == State.EXPECT_NEXT_PARAM_OR_CLOSE:
+        # elif state == State.EXPECT_PARAM_VALUE_BODY:
+
+        # elif state == State.EXPECT_PARAM_VALUE_CLOSE:
+        #    allowed_strings = ['"']
+
+        elif state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
             if self.remaining_prams_counter > 0:
                 allowed_strings = [","]
             else:
                 allowed_strings = ["}"]
+        # --------
 
-        elif state == State.EXPECT_FINAL_CLOSE:
+        # final
+        elif state == State.EXPECT_FINAL_OBJECT_CLOSE:
             allowed_strings = ["}"]
 
         else:
@@ -172,80 +229,114 @@ class Pipeline(BaseModel):
         # token = model.decode(token_id)
         token = id_to_token.get(token_id, "")
 
+        # root
         if state == State.START and token == "{":
             stack.append("OBJECT")
-            return State.EXPECT_NAME_KEY, stack
+            return State.EXPECT_NAME_KEY_OPEN, stack
 
-        if state == State.EXPECT_NAME_KEY:  # and token == '"name"':
+        # ---- "name" key ----
+        if state == State.EXPECT_NAME_KEY_OPEN and token == '"':
+            return State.EXPECT_NAME_KEY_BODY, stack
+
+        if state == State.EXPECT_NAME_KEY_BODY:  # and token == '"name"':
             if cur_state["cursor"]["children"][token_id]["terminal"]:
                 cur_state["cursor"] = root
-                return State.EXPECT_COLON_1, stack
-            return State.EXPECT_NAME_KEY, stack
+                return State.EXPECT_NAME_KEY_CLOSE, stack
+            return State.EXPECT_NAME_KEY_BODY, stack
 
-        if state == State.EXPECT_COLON_1 and token == ":":
-            return State.EXPECT_NAME_VALUE, stack
+        if state == State.EXPECT_NAME_KEY_CLOSE and token == '"':
+            return State.EXPECT_COLON_AFTER_NAME_KEY, stack
 
-        if state == State.EXPECT_NAME_VALUE:
+        if state == State.EXPECT_COLON_AFTER_NAME_KEY and token == ":":
+            return State.EXPECT_NAME_VALUE_OPEN, stack
+        # -------------
+
+        # "name" value (function name)
+        if state == State.EXPECT_NAME_VALUE_OPEN and token == '"':
+            return State.EXPECT_NAME_VALUE_BODY, stack
+
+        if state == State.EXPECT_NAME_VALUE_BODY:
             if cur_state["cursor"]["children"][token_id]["terminal"]:
                 cur_state["cursor"] = root
-                return State.EXPECT_COMMA, stack
-            return State.EXPECT_NAME_VALUE, stack
+                return State.EXPECT_NAME_VALUE_CLOSE, stack
+            return State.EXPECT_NAME_VALUE_BODY, stack
 
-        if state == State.EXPECT_COMMA and token == ",":
-            return State.EXPECT_PARAMETERS_KEY, stack
+        if state == State.EXPECT_NAME_VALUE_CLOSE and token == '"':
+            return State.EXPECT_COMMA_AFTER_NAME, stack
 
-        if state == State.EXPECT_PARAMETERS_KEY:  # and token == '"parameters"':
+        if state == State.EXPECT_COMMA_AFTER_NAME and token == ",":
+            return State.EXPECT_PARAMS_KEY_OPEN, stack
+        # -------------
+
+        # "parameters" key
+        if state == State.EXPECT_PARAMS_KEY_OPEN and token == '"':
+            return State.EXPECT_PARAMS_KEY_BODY, stack
+
+        if state == State.EXPECT_PARAMS_KEY_BODY:  # and token == '"parameters"':
             if cur_state["cursor"]["children"][token_id]["terminal"]:
                 cur_state["cursor"] = root
-                return State.EXPECT_COLON_2, stack
-            return State.EXPECT_PARAMETERS_KEY, stack
+                return State.EXPECT_PARAMS_KEY_CLOSE, stack
+            return State.EXPECT_PARAMS_KEY_BODY, stack
 
-        if state == State.EXPECT_COLON_2 and token == ":":
-            return State.EXPECT_PARAMETERS_OPEN, stack
+        if state == State.EXPECT_PARAMS_KEY_CLOSE and token == '"':
+            return State.EXPECT_COLON_AFTER_PARAMS_KEY, stack
 
-        if state == State.EXPECT_PARAMETERS_OPEN and token == "{":
+        if state == State.EXPECT_COLON_AFTER_PARAMS_KEY and token == ":":
+            return State.EXPECT_PARAMS_OBJECT_OPEN, stack
+        # -------------
+
+        # ---- parameters object ----
+        if state == State.EXPECT_PARAMS_OBJECT_OPEN and token == "{":
             stack.append("OBJECT")
             return State.EXPECT_PARAM_KEY_OPEN, stack
-            # return State.EXPECT_PARAMETERS_CLOSE, stack
+        # -------------
 
+        # parameter key
         if state == State.EXPECT_PARAM_KEY_OPEN and token == '"':
             cur_state["cursor"] = parameter_trie
-            return State.EXPECT_PARAM_NAME, stack
+            return State.EXPECT_PARAM_KEY_BODY, stack
 
-        if state == State.EXPECT_PARAM_NAME:
+        if state == State.EXPECT_PARAM_KEY_BODY:
             if cur_state["cursor"]["children"][token_id]["terminal"]:
                 cur_state["cursor"] = parameter_trie
                 return State.EXPECT_PARAM_KEY_CLOSE, stack
-            return State.EXPECT_PARAM_NAME, stack
+            return State.EXPECT_PARAM_KEY_BODY, stack
 
         if state == State.EXPECT_PARAM_KEY_CLOSE and token == '"':
-            return State.EXPECT_PARAM_COLON, stack
+            return State.EXPECT_COLON_AFTER_PARAM_KEY, stack
 
-        if state == State.EXPECT_PARAM_COLON and token == ":":
-            return State.EXPECT_STRING_OPEN, stack
+        if state == State.EXPECT_COLON_AFTER_PARAM_KEY and token == ":":
+            return State.EXPECT_PARAM_VALUE_OPEN, stack
+        # -------------
 
-        if state == State.EXPECT_STRING_OPEN and token == '"':
-            return State.EXPECT_STRING_BODY, stack
+        # parameter value (string only for now)
+        if state == State.EXPECT_PARAM_VALUE_OPEN and token == '"':
+            return State.EXPECT_PARAM_VALUE_BODY, stack
 
-        if state == State.EXPECT_STRING_BODY:
+        if state == State.EXPECT_PARAM_VALUE_BODY:
             # if '","' in token:
             #    return State.EXPECT_PARAM_NAME, stack
             # if token.endswith('",'):
             #    return State.EXPECT_PARAM_KEY_OPEN, stack
             if token.endswith('"'):
-                return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
+                return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
             # if token.endswith('}'):
             #    return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
-            return State.EXPECT_STRING_BODY, stack
+            return State.EXPECT_PARAM_VALUE_BODY, stack
 
-        if state == State.EXPECT_NEXT_PARAM_OR_CLOSE:
+        # if state == State.EXPECT_PARAM_VALUE_CLOSE and token == '"':
+        #    return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
+
+        if state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
             if token == ",":
                 return State.EXPECT_PARAM_KEY_OPEN, stack
             elif token == "}":
                 stack.pop()
-                return State.EXPECT_FINAL_CLOSE, stack
+                return State.EXPECT_FINAL_OBJECT_CLOSE, stack
+        # --------------
 
-        if state == State.EXPECT_FINAL_CLOSE and token == "}":
+        # final
+        if state == State.EXPECT_FINAL_OBJECT_CLOSE and token == "}":
             stack.pop()
             return State.DONE, stack
 
@@ -291,9 +382,9 @@ class Pipeline(BaseModel):
     def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
 
         # build the trie for function names
-        valid_strings = [f'"{name}"' for name in self.functions_by_name.keys()]
+        valid_strings = list(self.functions_by_name.keys())
         # also allow the parameters key
-        valid_strings += ['"parameters"', '"name"']
+        valid_strings += ['parameters', 'name']
         root_trie = self.build_trie(valid_strings)
 
         # will build this after we know the function
@@ -314,7 +405,7 @@ class Pipeline(BaseModel):
 
             # -----
             # logits -> filter (inject constrained decoding)
-            if state == State.EXPECT_STRING_BODY:
+            if state == State.EXPECT_PARAM_VALUE_BODY:
                 masked_logits = logits.copy()
                 # logits -> next token id
                 next_token_id = masked_logits.index(max(masked_logits))
@@ -333,9 +424,9 @@ class Pipeline(BaseModel):
             else:
                 allowed_token_ids = self.allowed_tokens(
                     state, cur_state)
-                if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
-                    # if "name" is allowed, prioritize it
-                    allowed_token_ids = {model.encode('"name"')[0][0].item()}
+                # if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
+                #    # if "name" is allowed, prioritize it
+                #    allowed_token_ids = {model.encode('"name"')[0][0].item()}
                 masked_logits = [
                     log if idx in allowed_token_ids
                     else NEGATIVE_INF
@@ -350,8 +441,8 @@ class Pipeline(BaseModel):
             # print state allowed tokens and next token for debugging
             # print(f"State: {state.name}", "next token:",
             #      model.decode([next_token_id]))
-            # print(f"State: {state.name}", "allowed tokens:", [model.decode(
-            #    [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
+            print(f"State: {state.name}", "allowed tokens:", [model.decode(
+                [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
 
             # separate generated ids
             generated_ids.append(next_token_id)
@@ -360,7 +451,7 @@ class Pipeline(BaseModel):
             input_ids.append(next_token_id)
 
             # save the function name
-            if state == State.EXPECT_NAME_VALUE:
+            if state == State.EXPECT_NAME_VALUE_BODY:
                 current_function_name_ids.append(next_token_id)
                 if cur_state["cursor"]["children"][next_token_id]["terminal"]:
                     current_function_name = model.decode(
@@ -385,10 +476,11 @@ class Pipeline(BaseModel):
                 parameter_trie
             )
 
-            states = [State.EXPECT_NAME_KEY,
-                      State.EXPECT_NAME_VALUE,
-                      State.EXPECT_PARAMETERS_KEY,
-                      State.EXPECT_PARAM_NAME,
+            states = [State.EXPECT_NAME_KEY_BODY,
+                      State.EXPECT_NAME_VALUE_BODY,
+                      State.EXPECT_PARAMS_KEY_BODY,
+                      State.EXPECT_PARAM_KEY_BODY,
+                      State.EXPECT_PARAM_VALUE_BODY,
                       ]
             children = cur_state["cursor"]["children"]
             if state in states and next_token_id in children:
