@@ -45,8 +45,10 @@ class State(Enum):
     EXPECT_COLON_AFTER_PARAM_KEY = auto()
 
     # parameter value (string only for now)
+    EXPECT_PARAM_NUM_VALUE_BODY = auto()
+
     EXPECT_PARAM_VALUE_OPEN = auto()
-    EXPECT_PARAM_VALUE_BODY = auto()
+    EXPECT_PARAM_STRING_VALUE_BODY = auto()
     EXPECT_PARAM_VALUE_CLOSE = auto()
 
     EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE = auto()
@@ -119,6 +121,7 @@ class Pipeline(BaseModel):
         default=[], description="Stack to manage nested structures")
     remaining_prams_counter: int = Field(
         default=0, description="Counter for remaining parameters to parse")
+    function_schema: Dict = {}
 
     def allowed_tokens(self, state, cur_state):
         allowed_strings = []
@@ -195,7 +198,7 @@ class Pipeline(BaseModel):
         elif state == State.EXPECT_PARAM_VALUE_OPEN:
             allowed_strings = ['"']
 
-        # elif state == State.EXPECT_PARAM_VALUE_BODY:
+        # elif state == State.EXPECT_PARAM_STRING_VALUE_BODY:
 
         # elif state == State.EXPECT_PARAM_VALUE_CLOSE:
         #    allowed_strings = ['"']
@@ -310,14 +313,25 @@ class Pipeline(BaseModel):
             return State.EXPECT_COLON_AFTER_PARAM_KEY, stack
 
         if state == State.EXPECT_COLON_AFTER_PARAM_KEY and token == ":":
-            return State.EXPECT_PARAM_VALUE_OPEN, stack
+            # if param is string move to param value open
+            total_params = len(self.function_schema)
+            curent_param = list(self.function_schema.keys())[
+                total_params - self.remaining_prams_counter - 1]
+
+            if self.function_schema[curent_param]["type"] == "string":
+                return State.EXPECT_PARAM_VALUE_OPEN, stack
+            elif self.function_schema[curent_param]["type"] == "number":
+                print("----------------------is a number----------------")
+                exit()
+
+            # in param is num move to num body
         # -------------
 
         # parameter value (string only for now)
         if state == State.EXPECT_PARAM_VALUE_OPEN and token == '"':
-            return State.EXPECT_PARAM_VALUE_BODY, stack
+            return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
 
-        if state == State.EXPECT_PARAM_VALUE_BODY:
+        if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
             # if '","' in token:
             #    return State.EXPECT_PARAM_NAME, stack
             # if token.endswith('",'):
@@ -326,7 +340,7 @@ class Pipeline(BaseModel):
                 return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
             # if token.endswith('}'):
             #    return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
-            return State.EXPECT_PARAM_VALUE_BODY, stack
+            return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
 
         # if state == State.EXPECT_PARAM_VALUE_CLOSE and token == '"':
         #    return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
@@ -410,7 +424,7 @@ class Pipeline(BaseModel):
 
             # -----
             # logits -> filter (inject constrained decoding)
-            if state == State.EXPECT_PARAM_VALUE_BODY:
+            if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
                 masked_logits = logits.copy()
                 # logits -> next token id
                 next_token_id = masked_logits.index(max(masked_logits))
@@ -465,6 +479,7 @@ class Pipeline(BaseModel):
             if function_schema is None and current_function_name is not None:
                 function_schema = self.load_function_schema(
                     current_function_name)
+                self.function_schema = function_schema
                 self.remaining_prams_counter = len(function_schema.keys())
 
                 # build the trie for parameters
@@ -487,7 +502,7 @@ class Pipeline(BaseModel):
                 State.EXPECT_NAME_VALUE_BODY,
                 # State.EXPECT_PARAMS_KEY_BODY,
                 State.EXPECT_PARAM_KEY_BODY,
-                State.EXPECT_PARAM_VALUE_BODY,
+                # State.EXPECT_PARAM_STRING_VALUE_BODY,
             ]
             children = cur_state["cursor"]["children"]
             if state in states and next_token_id in children:
