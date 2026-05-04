@@ -132,7 +132,8 @@ class Pipeline(BaseModel):
             allowed_strings = ['"']
 
         elif state == State.EXPECT_NAME_KEY_BODY:
-            return cur_state["cursor"]["children"]
+            allowed_strings = ["name"]
+            # return cur_state["cursor"]["children"]
 
         elif state == State.EXPECT_NAME_KEY_CLOSE:
             allowed_strings = ['"']
@@ -160,7 +161,8 @@ class Pipeline(BaseModel):
             allowed_strings = ['"']
 
         elif state == State.EXPECT_PARAMS_KEY_BODY:
-            return cur_state["cursor"]["children"]
+            allowed_strings = ["parameters"]
+            # return cur_state["cursor"]["children"]
 
         elif state == State.EXPECT_PARAMS_KEY_CLOSE:
             allowed_strings = ['"']
@@ -225,7 +227,7 @@ class Pipeline(BaseModel):
 
         return allowed_token_ids
 
-    def transition(self, state, token_id, stack, cur_state, root, parameter_trie):
+    def transition(self, state, token_id, stack, cur_state, keys_trie, f_names_trie, parameter_trie):
         # token = model.decode(token_id)
         token = id_to_token.get(token_id, "")
 
@@ -236,11 +238,12 @@ class Pipeline(BaseModel):
 
         # ---- "name" key ----
         if state == State.EXPECT_NAME_KEY_OPEN and token == '"':
+            # cur_state["cursor"] = keys_trie
             return State.EXPECT_NAME_KEY_BODY, stack
 
         if state == State.EXPECT_NAME_KEY_BODY:  # and token == '"name"':
-            if cur_state["cursor"]["children"][token_id]["terminal"]:
-                cur_state["cursor"] = root
+            # if cur_state["cursor"]["children"][token_id]["terminal"]:
+            if "name".endswith(token):
                 return State.EXPECT_NAME_KEY_CLOSE, stack
             return State.EXPECT_NAME_KEY_BODY, stack
 
@@ -253,11 +256,11 @@ class Pipeline(BaseModel):
 
         # "name" value (function name)
         if state == State.EXPECT_NAME_VALUE_OPEN and token == '"':
+            cur_state["cursor"] = f_names_trie
             return State.EXPECT_NAME_VALUE_BODY, stack
 
         if state == State.EXPECT_NAME_VALUE_BODY:
             if cur_state["cursor"]["children"][token_id]["terminal"]:
-                cur_state["cursor"] = root
                 return State.EXPECT_NAME_VALUE_CLOSE, stack
             return State.EXPECT_NAME_VALUE_BODY, stack
 
@@ -270,11 +273,12 @@ class Pipeline(BaseModel):
 
         # "parameters" key
         if state == State.EXPECT_PARAMS_KEY_OPEN and token == '"':
+            # cur_state["cursor"] = keys_trie
             return State.EXPECT_PARAMS_KEY_BODY, stack
 
         if state == State.EXPECT_PARAMS_KEY_BODY:  # and token == '"parameters"':
-            if cur_state["cursor"]["children"][token_id]["terminal"]:
-                cur_state["cursor"] = root
+            # if cur_state["cursor"]["children"][token_id]["terminal"]:
+            if "parameters".endswith(token):
                 return State.EXPECT_PARAMS_KEY_CLOSE, stack
             return State.EXPECT_PARAMS_KEY_BODY, stack
 
@@ -381,11 +385,11 @@ class Pipeline(BaseModel):
 
     def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
 
-        # build the trie for function names
-        valid_strings = list(self.functions_by_name.keys())
-        # also allow the parameters key
-        valid_strings += ['parameters', 'name']
-        root_trie = self.build_trie(valid_strings)
+        keys = ['parameters', 'name']
+        keys_trie = self.build_trie(keys)
+
+        f_names = list(self.functions_by_name.keys())
+        f_names_trie = self.build_trie(f_names)
 
         # will build this after we know the function
         parameter_trie = None
@@ -395,7 +399,8 @@ class Pipeline(BaseModel):
 
         state = State.START
         stack = []
-        cur_state = {"cursor": root_trie}
+        # for trie traversal, start with keys trie
+        cur_state = {"cursor": keys_trie}
         current_function_name_ids = []
         current_function_name = None
         function_schema = None
@@ -472,16 +477,18 @@ class Pipeline(BaseModel):
                 next_token_id,
                 stack,
                 cur_state,
-                root_trie,
+                keys_trie,
+                f_names_trie,
                 parameter_trie
             )
 
-            states = [State.EXPECT_NAME_KEY_BODY,
-                      State.EXPECT_NAME_VALUE_BODY,
-                      State.EXPECT_PARAMS_KEY_BODY,
-                      State.EXPECT_PARAM_KEY_BODY,
-                      State.EXPECT_PARAM_VALUE_BODY,
-                      ]
+            states = [
+                # State.EXPECT_NAME_KEY_BODY,
+                State.EXPECT_NAME_VALUE_BODY,
+                # State.EXPECT_PARAMS_KEY_BODY,
+                State.EXPECT_PARAM_KEY_BODY,
+                State.EXPECT_PARAM_VALUE_BODY,
+            ]
             children = cur_state["cursor"]["children"]
             if state in states and next_token_id in children:
                 cur_state["cursor"] = children[next_token_id]

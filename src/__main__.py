@@ -14,16 +14,8 @@ def build_prompt(prompt_text: str, functions: List[FunctionDefinition]) -> str:
     )
 
     return f"""
-You are a function-calling engine. Output ONLY valid JSON, no explanation.
-
 Functions:
 {functions_text}
-
-Rules:
-- If no function matches: {{"name": "", "parameters": {{}}}}
-- String args quoted, number args unquoted.
-
-Output: {{"name": "<function_name>", "parameters": {{<key>: <value>, ...}}}}
 
 Request: {prompt_text}
 JSON:
