@@ -1,3 +1,4 @@
+import time
 from typing import Dict, List
 from src.Pipeline import Pipeline
 from src.Parser import Parser
@@ -50,9 +51,14 @@ def main():
     # -- generation pipeline --
     pipline = Pipeline(functions_by_name=functions_by_name)
 
-    built_prompt = build_prompt(prompts[-1], functions)
-    output = pipline.stage1(built_prompt, max_new_tokens=100)
-    print("Output:\n", output)
+    x = [2, 3, 4, 5, 8, 9, 10]
+    # x = [9]
+    for i in x:
+        s = time.time()
+        built_prompt = build_prompt(prompts[i], functions)
+        output = pipline.stage1(built_prompt, max_new_tokens=100)
+        print("Output:\n", output)
+        print(f"Execution time: {time.time() - s:.2f} seconds")
     # for prompt in prompts:
     #    built_prompt = build_prompt(prompt, functions)
     #    output = pipline.stage1(built_prompt)

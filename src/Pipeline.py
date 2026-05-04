@@ -98,7 +98,7 @@ class Pipeline(BaseModel):
     remaining_prams_counter: int = Field(
         default=0, description="Counter for remaining parameters to parse")
 
-    def allowed_tokens(self, state, stack, cur_state, function_schema, params_counter):
+    def allowed_tokens(self, state, cur_state):
         allowed_strings = []
 
         if state == State.START:
@@ -107,7 +107,6 @@ class Pipeline(BaseModel):
         elif state == State.EXPECT_NAME_KEY:
             # all tokens that can continue from here
             return cur_state["cursor"]["children"]
-            # allowed_strings = ['"name"']
 
         elif state == State.EXPECT_COLON_1:
             allowed_strings = [":"]
@@ -115,14 +114,12 @@ class Pipeline(BaseModel):
         elif state == State.EXPECT_NAME_VALUE:
             # function names as strings
             return cur_state["cursor"]["children"]
-            # allowed_strings = list(self.functions_by_name.keys())
 
         elif state == State.EXPECT_COMMA:
             allowed_strings = [","]
 
         elif state == State.EXPECT_PARAMETERS_KEY:
             return cur_state["cursor"]["children"]
-            # allowed_strings = ['"parameters"']
 
         elif state == State.EXPECT_COLON_2:
             allowed_strings = [":"]
@@ -131,6 +128,7 @@ class Pipeline(BaseModel):
             allowed_strings = ["{"]
 
         elif state == State.EXPECT_PARAM_KEY_OPEN:
+            self.remaining_prams_counter -= 1
             allowed_strings = ['"']
 
         elif state == State.EXPECT_PARAM_NAME:
@@ -150,9 +148,6 @@ class Pipeline(BaseModel):
                 allowed_strings = [","]
             else:
                 allowed_strings = ["}"]
-
-        elif state == State.EXPECT_NEXT_PARAM_OR_CLOSE:
-            allowed_strings = ["}"]
 
         elif state == State.EXPECT_FINAL_CLOSE:
             allowed_strings = ["}"]
@@ -174,7 +169,8 @@ class Pipeline(BaseModel):
         return allowed_token_ids
 
     def transition(self, state, token_id, stack, cur_state, root, parameter_trie):
-        token = model.decode(token_id)
+        # token = model.decode(token_id)
+        token = id_to_token.get(token_id, "")
 
         if state == State.START and token == "{":
             stack.append("OBJECT")
@@ -232,15 +228,21 @@ class Pipeline(BaseModel):
             return State.EXPECT_STRING_BODY, stack
 
         if state == State.EXPECT_STRING_BODY:
-            if token == '"':
+            # if '","' in token:
+            #    return State.EXPECT_PARAM_NAME, stack
+            # if token.endswith('",'):
+            #    return State.EXPECT_PARAM_KEY_OPEN, stack
+            if token.endswith('"'):
                 return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
+            # if token.endswith('}'):
+            #    return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
             return State.EXPECT_STRING_BODY, stack
 
         if state == State.EXPECT_NEXT_PARAM_OR_CLOSE:
-            stack.pop()
             if token == ",":
                 return State.EXPECT_PARAM_KEY_OPEN, stack
             elif token == "}":
+                stack.pop()
                 return State.EXPECT_FINAL_CLOSE, stack
 
         if state == State.EXPECT_FINAL_CLOSE and token == "}":
@@ -313,16 +315,24 @@ class Pipeline(BaseModel):
             # -----
             # logits -> filter (inject constrained decoding)
             if state == State.EXPECT_STRING_BODY:
-                masked_logits = []
-                for idx, log in enumerate(logits):
-                    token = id_to_token.get(idx, "")
-                    if token == ',' or (token != '"' and any(char in token for char in ["'", '}'])):
-                        masked_logits.append(NEGATIVE_INF)
-                        continue
-                    masked_logits.append(log)
+                masked_logits = logits.copy()
+                # logits -> next token id
+                next_token_id = masked_logits.index(max(masked_logits))
+                token = id_to_token.get(next_token_id, "")
+                if '"' in token:
+                    token = token[:token.index('"') + 1]
+                    next_token_id = vocab.get(token, "")
+                    # if the next token includes a quote, mask all tokens that can lead to a quote
+                    # masked_logits = []
+                    # for idx, log in enumerate(logits):
+                    #     token = id_to_token.get(idx, "")
+                    #     if token != '}' and any(char in token for char in ["'"]):
+                    #         masked_logits.append(NEGATIVE_INF)
+                    #         continue
+                    #     masked_logits.append(log)
             else:
                 allowed_token_ids = self.allowed_tokens(
-                    state, stack, cur_state, function_schema, self.remaining_prams_counter)
+                    state, cur_state)
                 if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
                     # if "name" is allowed, prioritize it
                     allowed_token_ids = {model.encode('"name"')[0][0].item()}
@@ -331,13 +341,15 @@ class Pipeline(BaseModel):
                     else NEGATIVE_INF
                     for idx, log in enumerate(logits)
                 ]
+                # logits -> next token id
+                next_token_id = masked_logits.index(max(masked_logits))
             # -----
 
             # logits -> next token id
-            next_token_id = masked_logits.index(max(masked_logits))
+            # next_token_id = masked_logits.index(max(masked_logits))
             # print state allowed tokens and next token for debugging
-            print(f"State: {state.name}", "next token:",
-                  model.decode([next_token_id]))
+            # print(f"State: {state.name}", "next token:",
+            #      model.decode([next_token_id]))
             # print(f"State: {state.name}", "allowed tokens:", [model.decode(
             #    [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
 
@@ -362,10 +374,6 @@ class Pipeline(BaseModel):
                 # build the trie for parameters
                 parameter_trie = self.build_trie(
                     list(function_schema.keys()))
-                # cur_state["cursor"] = parameter_trie
-                # for debugging
-                print("Parameter trie:")
-                self._print_trie_children(parameter_trie, model, "")
 
             # update state
             state, stack = self.transition(
