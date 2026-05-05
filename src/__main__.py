@@ -26,30 +26,29 @@ JSON:
 
 def main():
     # -- parsing --
-
     parser = Parser()
+
     # load functions definitions into model objects
     functions = parser.parse_func_defs()
+
     # store functions by names for easy access
     functions_by_name: Dict[str, "FunctionDefinition"] = {}
     for func in functions:
         functions_by_name[func.name] = func
+
     # load prompts into a list
     prompts = parser.parse_prompts()
 
     # -- generation pipeline --
     pipline = Pipeline(functions_by_name=functions_by_name)
 
-    # x = [2, 3, 4, 5, 8, 9, 10]
-    # x = [8, 9, 10]
-    x = range(11)
     ref_s = time.time()
     total_calls = []
-    for i in x:
+    for prompt in prompts:
         result = {}
-        result["prompt"] = prompts[i]
+        result["prompt"] = prompt
         s = time.time()
-        built_prompt = build_prompt(prompts[i], functions)
+        built_prompt = build_prompt(prompt, functions)
         output = pipline.stage1(built_prompt, max_new_tokens=100)
         result.update(json.loads(output))
         total_calls.append(result)
@@ -58,15 +57,8 @@ def main():
 
     with open("data/output/output.json", "w") as f:
         json.dump(total_calls, f, indent=2)
-    print(f"\ntotal time: {time.time() - ref_s:.2f} seconds")
-    # for prompt in prompts:
-    #    built_prompt = build_prompt(prompt, functions)
-    #    output = pipline.stage1(built_prompt)
-    #    print("Output:\n", output)
-    #    print("-" * 50)
 
-    # -- ouput --
-    # format and save ouput
+    print(f"\ntotal time: {time.time() - ref_s:.2f} seconds")
 
 
 if __name__ == "__main__":
