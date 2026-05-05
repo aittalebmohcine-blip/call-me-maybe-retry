@@ -44,7 +44,7 @@ class State(Enum):
 
     EXPECT_COLON_AFTER_PARAM_KEY = auto()
 
-    # parameter value (string only for now)
+    # parameter value
     EXPECT_PARAM_NUM_VALUE_BODY = auto()
 
     EXPECT_PARAM_VALUE_OPEN = auto()
@@ -194,7 +194,13 @@ class Pipeline(BaseModel):
             allowed_strings = [":"]
         # --------
 
-        # ----parameter value (string only for now)----
+        # ----parameter value----
+        elif state == State.EXPECT_PARAM_NUM_VALUE_BODY:
+            if self.remaining_prams_counter > 0:
+                allowed_strings = "0123456789-+.eE^,"
+            else:
+                allowed_strings = "0123456789-+.eE^}"
+
         elif state == State.EXPECT_PARAM_VALUE_OPEN:
             allowed_strings = ['"']
 
@@ -320,16 +326,22 @@ class Pipeline(BaseModel):
 
             if self.function_schema[curent_param]["type"] == "string":
                 return State.EXPECT_PARAM_VALUE_OPEN, stack
-            elif self.function_schema[curent_param]["type"] == "number":
-                print("----------------------is a number----------------")
-                exit()
 
-            # in param is num move to num body
+            elif self.function_schema[curent_param]["type"] == "number":
+                return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
         # -------------
 
-        # parameter value (string only for now)
+        # parameter value
         if state == State.EXPECT_PARAM_VALUE_OPEN and token == '"':
             return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
+
+        if state == State.EXPECT_PARAM_NUM_VALUE_BODY:
+            if token == ",":
+                return State.EXPECT_PARAM_KEY_OPEN, stack
+            elif token == "}":
+                stack.pop()
+                return State.EXPECT_FINAL_OBJECT_CLOSE, stack
+            return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
 
         if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
             # if '","' in token:
@@ -346,6 +358,8 @@ class Pipeline(BaseModel):
         #    return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
 
         if state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
+            if token == '"':
+                return State.EXPECT_PARAM_KEY_BODY, stack
             if token == ",":
                 return State.EXPECT_PARAM_KEY_OPEN, stack
             elif token == "}":
@@ -460,8 +474,8 @@ class Pipeline(BaseModel):
             # print state allowed tokens and next token for debugging
             # print(f"State: {state.name}", "next token:",
             #      model.decode([next_token_id]))
-            print(f"State: {state.name}", "allowed tokens:", [model.decode(
-                [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
+            # print(f"State: {state.name}", "allowed tokens:", [model.decode(
+            #    [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
 
             # separate generated ids
             generated_ids.append(next_token_id)
