@@ -1,5 +1,7 @@
 import time
 from typing import Dict, List
+import json
+
 from src.Pipeline import Pipeline
 from src.Parser import Parser
 from src.Models import FunctionDefinition
@@ -42,13 +44,20 @@ def main():
     # x = [8, 9, 10]
     x = range(11)
     ref_s = time.time()
+    total_calls = []
     for i in x:
+        result = {}
+        result["prompt"] = prompts[i]
         s = time.time()
         built_prompt = build_prompt(prompts[i], functions)
         output = pipline.stage1(built_prompt, max_new_tokens=100)
-        print("Output:\n", output)
+        result.update(json.loads(output))
+        total_calls.append(result)
+        print("Output:\n", result)
         print(f"Execution time: {time.time() - s:.2f} seconds")
 
+    with open("data/output/output.json", "w") as f:
+        json.dump(total_calls, f, indent=2)
     print(f"\ntotal time: {time.time() - ref_s:.2f} seconds")
     # for prompt in prompts:
     #    built_prompt = build_prompt(prompt, functions)
