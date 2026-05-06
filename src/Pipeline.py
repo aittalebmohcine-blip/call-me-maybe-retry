@@ -281,9 +281,6 @@ class Pipeline(BaseModel):
         max_new_tokens: int = 50
     ) -> str:
 
-        # keys = ['parameters', 'name']
-        # keys_trie = self.build_trie(keys)
-
         f_names = list(self.functions_by_name.keys())
         f_names_trie = Utils.build_trie(f_names)
 
@@ -314,20 +311,9 @@ class Pipeline(BaseModel):
                 if '"' in token:
                     token = token[:token.index('"') + 1]
                     next_token_id = vocab.get(token, "")
-                    # if the next token includes a quote, mask all tokens that can lead to a quote
-                    # masked_logits = []
-                    # for idx, log in enumerate(logits):
-                    #     token = id_to_token.get(idx, "")
-                    #     if token != '}' and any(char in token for char in ["'"]):
-                    #         masked_logits.append(NEGATIVE_INF)
-                    #         continue
-                    #     masked_logits.append(log)
             else:
                 allowed_token_ids = self.allowed_tokens(
                     state, cur_state)
-                # if state is State.EXPECT_NAME_KEY and model.encode('"name"')[0][0].item() in allowed_token_ids:
-                #    # if "name" is allowed, prioritize it
-                #    allowed_token_ids = {model.encode('"name"')[0][0].item()}
                 masked_logits = [
                     log if idx in allowed_token_ids
                     else NEGATIVE_INF
@@ -338,12 +324,6 @@ class Pipeline(BaseModel):
             # -----
 
             # logits -> next token id
-            # next_token_id = masked_logits.index(max(masked_logits))
-            # print state allowed tokens and next token for debugging
-            # print(f"State: {state.name}", "next token:",
-            #      model.decode([next_token_id]))
-            # print(f"State: {state.name}", "allowed tokens:", [model.decode(
-            #    [tid]) for tid in allowed_token_ids], "next token:", model.decode([next_token_id]))
 
             # separate generated ids
             generated_ids.append(next_token_id)
@@ -379,11 +359,8 @@ class Pipeline(BaseModel):
             )
 
             states = [
-                # State.EXPECT_NAME_KEY_BODY,
                 State.EXPECT_NAME_VALUE_BODY,
-                # State.EXPECT_PARAMS_KEY_BODY,
                 State.EXPECT_PARAM_KEY_BODY,
-                # State.EXPECT_PARAM_STRING_VALUE_BODY,
             ]
             children = cur_state["cursor"]["children"]
             if state in states and next_token_id in children:
