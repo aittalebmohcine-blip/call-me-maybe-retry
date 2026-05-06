@@ -59,9 +59,6 @@ class State(Enum):
     DONE = auto()
 
 
-# ------------------------
-# buudling the trie for fast id look up
-# ------------------------
 path = model.get_path_to_vocab_file()
 
 with open(path, "r", encoding="utf-8") as f:
@@ -69,49 +66,6 @@ with open(path, "r", encoding="utf-8") as f:
 
 # a dict for reverse lookup from token id to token text
 id_to_token = {v: k for k, v in vocab.items()}
-
-#
-#
-# class TrieNode:
-#    def __init__(self):
-#        self.children = {}
-#        self.token_ids = []
-#
-#
-# class Trie:
-#    def __init__(self):
-#        self.root = TrieNode()
-#
-#    def insert(self, token_text, token_id):
-#        node = self.root
-#
-#        for ch in token_text:
-#            if ch not in node.children:
-#                node.children[ch] = TrieNode()
-#
-#            node = node.children[ch]
-#            node.token_ids.append(token_id)
-#
-#    def lookup(self, prefix):
-#        node = self.root
-#
-#        for ch in prefix:
-#            if ch not in node.children:
-#                return []
-#
-#            node = node.children[ch]
-#
-#        return node.token_ids
-#
-#
-# trie = Trie()
-#
-# for token_text, token_id in vocab.items():
-#    trie.insert(token_text, token_id)
-
-# --------------------------
-# pipline
-# --------------------------
 
 
 class Pipeline(BaseModel):
@@ -136,7 +90,6 @@ class Pipeline(BaseModel):
 
         elif state == State.EXPECT_NAME_KEY_BODY:
             allowed_strings = ["name"]
-            # return cur_state["cursor"]["children"]
 
         elif state == State.EXPECT_NAME_KEY_CLOSE:
             allowed_strings = ['"']
@@ -165,7 +118,6 @@ class Pipeline(BaseModel):
 
         elif state == State.EXPECT_PARAMS_KEY_BODY:
             allowed_strings = ["parameters"]
-            # return cur_state["cursor"]["children"]
 
         elif state == State.EXPECT_PARAMS_KEY_CLOSE:
             allowed_strings = ['"']
@@ -204,11 +156,6 @@ class Pipeline(BaseModel):
         elif state == State.EXPECT_PARAM_VALUE_OPEN:
             allowed_strings = ['"']
 
-        # elif state == State.EXPECT_PARAM_STRING_VALUE_BODY:
-
-        # elif state == State.EXPECT_PARAM_VALUE_CLOSE:
-        #    allowed_strings = ['"']
-
         elif state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
             if self.remaining_prams_counter > 0:
                 allowed_strings = [","]
@@ -236,7 +183,15 @@ class Pipeline(BaseModel):
 
         return allowed_token_ids
 
-    def transition(self, state, token_id, stack, cur_state, keys_trie, f_names_trie, parameter_trie):
+    def transition(
+        self,
+        state,
+        token_id,
+        stack,
+        cur_state,
+        f_names_trie,
+        parameter_trie
+    ):
         # token = model.decode(token_id)
         token = id_to_token.get(token_id, "")
 
@@ -247,11 +202,9 @@ class Pipeline(BaseModel):
 
         # ---- "name" key ----
         if state == State.EXPECT_NAME_KEY_OPEN and token == '"':
-            # cur_state["cursor"] = keys_trie
             return State.EXPECT_NAME_KEY_BODY, stack
 
         if state == State.EXPECT_NAME_KEY_BODY:  # and token == '"name"':
-            # if cur_state["cursor"]["children"][token_id]["terminal"]:
             if "name".endswith(token):
                 return State.EXPECT_NAME_KEY_CLOSE, stack
             return State.EXPECT_NAME_KEY_BODY, stack
@@ -282,11 +235,9 @@ class Pipeline(BaseModel):
 
         # "parameters" key
         if state == State.EXPECT_PARAMS_KEY_OPEN and token == '"':
-            # cur_state["cursor"] = keys_trie
             return State.EXPECT_PARAMS_KEY_BODY, stack
 
-        if state == State.EXPECT_PARAMS_KEY_BODY:  # and token == '"parameters"':
-            # if cur_state["cursor"]["children"][token_id]["terminal"]:
+        if state == State.EXPECT_PARAMS_KEY_BODY:
             if "parameters".endswith(token):
                 return State.EXPECT_PARAMS_KEY_CLOSE, stack
             return State.EXPECT_PARAMS_KEY_BODY, stack
@@ -336,32 +287,31 @@ class Pipeline(BaseModel):
             return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
 
         if state == State.EXPECT_PARAM_NUM_VALUE_BODY:
+
             if token == ",":
                 return State.EXPECT_PARAM_KEY_OPEN, stack
+
             elif token == "}":
                 stack.pop()
                 return State.EXPECT_FINAL_OBJECT_CLOSE, stack
+
             return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
 
         if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
-            # if '","' in token:
-            #    return State.EXPECT_PARAM_NAME, stack
-            # if token.endswith('",'):
-            #    return State.EXPECT_PARAM_KEY_OPEN, stack
+
             if token.endswith('"'):
                 return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
-            # if token.endswith('}'):
-            #    return State.EXPECT_NEXT_PARAM_OR_CLOSE, stack
+
             return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
 
-        # if state == State.EXPECT_PARAM_VALUE_CLOSE and token == '"':
-        #    return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
-
         if state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
+
             if token == '"':
                 return State.EXPECT_PARAM_KEY_BODY, stack
+
             if token == ",":
                 return State.EXPECT_PARAM_KEY_OPEN, stack
+
             elif token == "}":
                 stack.pop()
                 return State.EXPECT_FINAL_OBJECT_CLOSE, stack
@@ -374,47 +324,27 @@ class Pipeline(BaseModel):
 
         raise ValueError("Invalid transition")
 
-    # -------
-    # helper to print trie (for debugging)
-    # -------
-    def _print_trie_children(self, node, tokenizer, indent):
-        children = node["children"]
-        keys = list(children.keys())
-        for i, token_id in enumerate(keys):
-            child = children[token_id]
-            is_last = (i == len(keys) - 1)
-            connector = "└── " if is_last else "├── "
-            extension = "    " if is_last else "│   "
-
-            if tokenizer is not None:
-                token_str = tokenizer.decode([token_id])
-                label = f"[{token_id}] '{token_str}'"
-            else:
-                label = f"[{token_id}]"
-
-            marker = " ●" if child["terminal"] else ""
-            print(f"{indent}{connector}{label}{marker}")
-            self._print_trie_children(child, tokenizer, indent + extension)
-    # -------
-
     def build_trie(self, strings):
         trie = {"children": {}, "terminal": False}
 
         for name in strings:
             node = trie
+
             for id in model.encode(name)[0].tolist():
                 if id not in node["children"]:
                     node["children"][id] = {
                         "children": {}, "terminal": False}
+
                 node = node["children"][id]
+
             node["terminal"] = True
 
         return trie
 
-    def stage1(self, prompt: str, max_new_tokens: int = 30) -> str:
+    def stage1(self, prompt: str, max_new_tokens: int = 50) -> str:
 
-        keys = ['parameters', 'name']
-        keys_trie = self.build_trie(keys)
+        # keys = ['parameters', 'name']
+        # keys_trie = self.build_trie(keys)
 
         f_names = list(self.functions_by_name.keys())
         f_names_trie = self.build_trie(f_names)
@@ -428,7 +358,7 @@ class Pipeline(BaseModel):
         state = State.START
         stack = []
         # for trie traversal, start with keys trie
-        cur_state = {"cursor": keys_trie}
+        cur_state = {"cursor": f_names_trie}
         current_function_name_ids = []
         current_function_name = None
         function_schema = None
@@ -506,7 +436,6 @@ class Pipeline(BaseModel):
                 next_token_id,
                 stack,
                 cur_state,
-                keys_trie,
                 f_names_trie,
                 parameter_trie
             )
