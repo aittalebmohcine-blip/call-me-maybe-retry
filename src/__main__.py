@@ -1,5 +1,5 @@
 import time
-from typing import Dict, List
+from typing import Dict
 import json
 
 from src.Pipeline import Pipeline
@@ -9,7 +9,7 @@ from src.Utils import Utils
 
 
 def main():
-    # -- parsing --
+    # -- loading and parsing --
     parser = Parser()
 
     # load functions definitions into model objects
@@ -39,6 +39,7 @@ def main():
         print("Output:\n", result)
         print(f"Execution time: {time.time() - s:.2f} seconds")
 
+    # --- Save ouput ---
     with open("data/output/output.json", "w") as f:
         json.dump(total_calls, f, indent=2)
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Any, Dict
 from enum import Enum, auto
 import json
 
@@ -8,27 +8,35 @@ from llm_sdk import Small_LLM_Model
 
 
 model: Small_LLM_Model = Small_LLM_Model()
-NEGATIVE_INF = float('-inf')
+NEGATIVE_INF: float = float('-inf')
 
-path_to_vocab_file = model.get_path_to_vocab_file()
+path_to_vocab_file: str = model.get_path_to_vocab_file()
 with open(path_to_vocab_file, "r", encoding="utf-8") as f:
-    vocab = json.load(f)
+    vocab: Any = json.load(f)
 # a dict for reverse lookup from token id to token text
-id_to_token = {v: k for k, v in vocab.items()}
+id_to_token: Dict[int, str] = {v: k for k, v in vocab.items()}
 
 
 class Utils(BaseModel):
     @staticmethod
-    def load_function_schema(name: str, functions_by_name):
+    def load_function_schema(
+        name: str,
+        functions_by_name: Dict[str, FunctionDefinition]
+    ) -> Dict[str, Dict[str, str]]:
         return functions_by_name[name].parameters
 
     @staticmethod
-    def build_trie(strings):
-        trie = {"children": {}, "terminal": False}
+    def build_trie(
+        strings: List[str]
+    ) -> Dict[str, Dict | bool]:
+        trie: Dict = {"children": {}, "terminal": False}
 
+        name: str
+        node: Dict
         for name in strings:
             node = trie
 
+            id: int
             for id in model.encode(name)[0].tolist():
                 if id not in node["children"]:
                     node["children"][id] = {
@@ -45,7 +53,7 @@ class Utils(BaseModel):
         prompt_text: str,
         functions: List[FunctionDefinition]
     ) -> str:
-        functions_text = "\n".join(
+        functions_text: str = "\n".join(
             f"- {f.name}(" +
             ", ".join(f"{k}: {v['type']}" for k, v in f.parameters.items()) +
             ")"
