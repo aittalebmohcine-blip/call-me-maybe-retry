@@ -1,97 +1,49 @@
-from typing import Dict, List
+import time
+from typing import Dict
+import json
+
 from src.Pipeline import Pipeline
 from src.Parser import Parser
 from src.Models import FunctionDefinition
-
-
-def build_prompt(prompt_text: str, functions: List[FunctionDefinition]) -> str:
-    functions_text = "\n".join(
-        f"- {f.name}(" +
-        ", ".join(f"{k}: {v['type']}" for k, v in f.parameters.items()) +
-        ")"
-        for f in functions
-    )
-
-    return f"""
-You are a function-calling engine.
-Given a user request, select the best matching
-function and extract its arguments.
-
-Available functions:
-{functions_text}
-
-Rules:
-- Output ONLY valid JSON. No explanation, no markdown, no extra text.
-- If no function matches, return: {{"name": "", "parameters": {{}}}}
-- String arguments must be quoted. Number arguments must be unquoted.
-
-Output format:
-{{"name": "<function_name>", "parameters": {{<key>: <value>, ...}}}}
-
-User request: {prompt_text}
-Answer:
-""".strip()
-
-
-def build_fnname_extractor_prompt(prompt_text: str, functions) -> str:
-    return f"""
-You are a function-calling engine. Given a user request, return the name of the best matching function.
-
-Available functions:
-{functions}
-
-Rules:
-- Output ONLY the function name. No explanation, no markdown, no extra text.
-- If no function matches, output: none
-
-User request: {prompt_text}
-Answer:
-""".strip()
-
-
-def build_args_extractor_prompt(
-    prompt_text: str, function: FunctionDefinition
-) -> str:
-    return f"""
-You are a function-calling engine. Given a user request and a function name, extract the arguments for that function.
-
-Rules:
-- Output ONLY valid JSON. No explanation, no markdown, no extra text.
-- String arguments must be quoted. Number arguments must be unquoted.
-- If no arguments, return: {{}}
-
-Function: {function}
-User request: {prompt_text}
-Answer:
-""".strip()
-    ...
+from src.Utils import Utils
 
 
 def main():
-    # -- parsing --
-
+    # -- loading and parsing --
     parser = Parser()
+
     # load functions definitions into model objects
     functions = parser.parse_func_defs()
+
     # store functions by names for easy access
     functions_by_name: Dict[str, "FunctionDefinition"] = {}
     for func in functions:
         functions_by_name[func.name] = func
+
     # load prompts into a list
     prompts = parser.parse_prompts()
 
     # -- generation pipeline --
     pipline = Pipeline(functions_by_name=functions_by_name)
 
-    for prompt in prompts[-3:]:
-        name = pipline._stage1_extract_name(prompt)
-        parameters = pipline._stage2_extract_args(prompt, name)
-        print(name)
-        print(parameters)
-        print("---")
+    ref_s = time.time()
+    total_calls = []
+    for prompt in prompts:
+        result = {}
+        result["prompt"] = prompt
+        s = time.time()
+        built_prompt = Utils.build_prompt(prompt, functions)
+        output = pipline.stage1(built_prompt, max_new_tokens=100)
+        result.update(json.loads(output))
+        total_calls.append(result)
+        print("Output:\n", result)
+        print(f"Execution time: {time.time() - s:.2f} seconds")
 
-    # -- ouput --
-    # format and save ouput
+    # --- Save ouput ---
+    with open("data/output/output.json", "w") as f:
+        json.dump(total_calls, f, indent=2)
+
+    print(f"\ntotal time: {time.time() - ref_s:.2f} seconds")
 
 
 if __name__ == "__main__":

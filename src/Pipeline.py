@@ -1,84 +1,329 @@
 from pydantic import BaseModel, Field
-from typing import Dict, Set, Any
+from typing import Dict
 
-from llm_sdk import Small_LLM_Model
-
-NEGATIVE_INF = float('-inf')
-
-# Trie node: maps token_id → child node, plus is_terminal flag
-# {"children": {token_id: TrieNode}, "terminal": bool}
-TrieNode = dict
-
-model: Small_LLM_Model = Small_LLM_Model()
-NUM_TOKEN_IDS = set(model.encode("0123456789.-+eE\n")[0].tolist())
-FORBIDDEN_STR_TOKEN_IDS = {364, 330}
+from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab
 
 
 class Pipeline(BaseModel):
-    functions_by_name: Dict = Field(...,
-                                    description="List of function definitions")
+    functions_by_name: Dict = Field(
+        ...,
+        description="List of function definitions"
+    )
 
-    def build_trie(self, string_to_ids: dict[str, list[int]]) -> TrieNode:
-        root = {"children": {}, "terminal": False}
-        for _, ids in string_to_ids.items():
-            node = root
-            for token_id in ids:
-                if token_id not in node["children"]:
-                    node["children"][token_id] = {
-                        "children": {}, "terminal": False}
-                node = node["children"][token_id]
-            node["terminal"] = True
-        return root
+    stack: list = Field(
+        default=[],
+        description="Stack to manage nested structures"
+    )
 
-    def get_allowed_ids_at_trie_node(self, node: TrieNode) -> set[int]:
-        """Which token IDs are valid next steps from this trie node?"""
-        return set(node["children"].keys())
+    remaining_prams_counter: int = Field(
+        default=0,
+        description="Counter for remaining parameters to parse"
+    )
+    function_schema: Dict = Field(
+        default={},
+        description="Schema for the selected function parameters"
+    )
 
-    # ------------------------------------------------------------------
-    # Stage 1: greedy constrained decode → function name
-    # ------------------------------------------------------------------
+    def allowed_tokens(
+        self,
+        state,
+        cur_state
+    ):
+        allowed_strings = []
 
-    def _stage1_extract_name(self, prompt: str, max_new_tokens: int = 50) -> str:
-        valid_function_names = [f for f in self.functions_by_name.keys()]
+        # root
+        if state == State.START:
+            allowed_strings = ["{"]
 
-        extract_fnname_prompt = f"""
-You are a function-calling engine. Given a user request, return the name of the best matching function.
+        # ----"name" key-----
+        elif state == State.EXPECT_NAME_KEY_OPEN:
+            allowed_strings = ['"']
 
-Available functions:
-{self.functions_by_name.values()}
+        elif state == State.EXPECT_NAME_KEY_BODY:
+            allowed_strings = ["name"]
 
-Rules:
-- Output ONLY the function name. No explanation, no markdown, no extra text.
-- If no function matches, output: none
+        elif state == State.EXPECT_NAME_KEY_CLOSE:
+            allowed_strings = ['"']
+        # --------
 
-User request: {prompt}
-Answer:
-        """.strip()
+        elif state == State.EXPECT_COLON_AFTER_NAME_KEY:
+            allowed_strings = [":"]
 
-        string_to_ids = {name: model.encode(
-            name)[0].tolist() for name in valid_function_names}
-        trie = self.build_trie(string_to_ids)
+        # ----"name" value (function name)----
+        elif state == State.EXPECT_NAME_VALUE_OPEN:
+            allowed_strings = ['"']
 
-        # prompt -> tokens -> ids
-        input_ids = model.encode(extract_fnname_prompt)[0].tolist()
+        elif state == State.EXPECT_NAME_VALUE_BODY:
+            return cur_state["cursor"]["children"]
 
-        # for separating genrated from input ids
+        elif state == State.EXPECT_NAME_VALUE_CLOSE:
+            allowed_strings = ['"']
+        # --------
+
+        elif state == State.EXPECT_COMMA_AFTER_NAME:
+            allowed_strings = [","]
+
+        # ----"parameters" key----
+        elif state == State.EXPECT_PARAMS_KEY_OPEN:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_PARAMS_KEY_BODY:
+            allowed_strings = ["parameters"]
+
+        elif state == State.EXPECT_PARAMS_KEY_CLOSE:
+            allowed_strings = ['"']
+        # --------
+
+        elif state == State.EXPECT_COLON_AFTER_PARAMS_KEY:
+            allowed_strings = [":"]
+
+        # ----parameters object----
+        elif state == State.EXPECT_PARAMS_OBJECT_OPEN:
+            allowed_strings = ["{"]
+        # --------
+
+        # ----parameter key----
+        elif state == State.EXPECT_PARAM_KEY_OPEN:
+            self.remaining_prams_counter -= 1
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_PARAM_KEY_BODY:
+            return cur_state["cursor"]["children"]
+
+        elif state == State.EXPECT_PARAM_KEY_CLOSE:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_COLON_AFTER_PARAM_KEY:
+            allowed_strings = [":"]
+        # --------
+
+        # ----parameter value----
+        elif state == State.EXPECT_PARAM_NUM_VALUE_BODY:
+            if self.remaining_prams_counter > 0:
+                allowed_strings = "0123456789-+.eE^,"
+            else:
+                allowed_strings = "0123456789-+.eE^}"
+
+        elif state == State.EXPECT_PARAM_VALUE_OPEN:
+            allowed_strings = ['"']
+
+        elif state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
+            if self.remaining_prams_counter > 0:
+                allowed_strings = [","]
+            else:
+                allowed_strings = ["}"]
+        # --------
+
+        # final
+        elif state == State.EXPECT_FINAL_OBJECT_CLOSE:
+            allowed_strings = ["}"]
+
+        else:
+            allowed_strings = []
+
+        # ---- APPLY THE RULE HERE ----
+        allowed_token_ids = set()
+
+        for text in allowed_strings:
+            # or tokenizer equivalent
+            token_ids = model.encode(text)[0].tolist()
+
+            # IMPORTANT: flatten and union all tokens
+            for tid in token_ids:
+                allowed_token_ids.add(tid)
+
+        return allowed_token_ids
+
+    def transition(
+        self,
+        state,
+        token_id,
+        stack,
+        cur_state,
+        f_names_trie,
+        parameter_trie
+    ):
+        # token = model.decode(token_id)
+        token = id_to_token.get(token_id, "")
+
+        # root
+        if state == State.START and token == "{":
+            stack.append("OBJECT")
+            return State.EXPECT_NAME_KEY_OPEN, stack
+
+        # ---- "name" key ----
+        if state == State.EXPECT_NAME_KEY_OPEN and token == '"':
+            return State.EXPECT_NAME_KEY_BODY, stack
+
+        if state == State.EXPECT_NAME_KEY_BODY:  # and token == '"name"':
+            if "name".endswith(token):
+                return State.EXPECT_NAME_KEY_CLOSE, stack
+            return State.EXPECT_NAME_KEY_BODY, stack
+
+        if state == State.EXPECT_NAME_KEY_CLOSE and token == '"':
+            return State.EXPECT_COLON_AFTER_NAME_KEY, stack
+
+        if state == State.EXPECT_COLON_AFTER_NAME_KEY and token == ":":
+            return State.EXPECT_NAME_VALUE_OPEN, stack
+        # -------------
+
+        # "name" value (function name)
+        if state == State.EXPECT_NAME_VALUE_OPEN and token == '"':
+            cur_state["cursor"] = f_names_trie
+            return State.EXPECT_NAME_VALUE_BODY, stack
+
+        if state == State.EXPECT_NAME_VALUE_BODY:
+            if cur_state["cursor"]["children"][token_id]["terminal"]:
+                return State.EXPECT_NAME_VALUE_CLOSE, stack
+            return State.EXPECT_NAME_VALUE_BODY, stack
+
+        if state == State.EXPECT_NAME_VALUE_CLOSE and token == '"':
+            return State.EXPECT_COMMA_AFTER_NAME, stack
+
+        if state == State.EXPECT_COMMA_AFTER_NAME and token == ",":
+            return State.EXPECT_PARAMS_KEY_OPEN, stack
+        # -------------
+
+        # "parameters" key
+        if state == State.EXPECT_PARAMS_KEY_OPEN and token == '"':
+            return State.EXPECT_PARAMS_KEY_BODY, stack
+
+        if state == State.EXPECT_PARAMS_KEY_BODY:
+            if "parameters".endswith(token):
+                return State.EXPECT_PARAMS_KEY_CLOSE, stack
+            return State.EXPECT_PARAMS_KEY_BODY, stack
+
+        if state == State.EXPECT_PARAMS_KEY_CLOSE and token == '"':
+            return State.EXPECT_COLON_AFTER_PARAMS_KEY, stack
+
+        if state == State.EXPECT_COLON_AFTER_PARAMS_KEY and token == ":":
+            return State.EXPECT_PARAMS_OBJECT_OPEN, stack
+        # -------------
+
+        # ---- parameters object ----
+        if state == State.EXPECT_PARAMS_OBJECT_OPEN and token == "{":
+            stack.append("OBJECT")
+            return State.EXPECT_PARAM_KEY_OPEN, stack
+        # -------------
+
+        # parameter key
+        if state == State.EXPECT_PARAM_KEY_OPEN and token == '"':
+            cur_state["cursor"] = parameter_trie
+            return State.EXPECT_PARAM_KEY_BODY, stack
+
+        if state == State.EXPECT_PARAM_KEY_BODY:
+            if cur_state["cursor"]["children"][token_id]["terminal"]:
+                cur_state["cursor"] = parameter_trie
+                return State.EXPECT_PARAM_KEY_CLOSE, stack
+            return State.EXPECT_PARAM_KEY_BODY, stack
+
+        if state == State.EXPECT_PARAM_KEY_CLOSE and token == '"':
+            return State.EXPECT_COLON_AFTER_PARAM_KEY, stack
+
+        if state == State.EXPECT_COLON_AFTER_PARAM_KEY and token == ":":
+            # if param is string move to param value open
+            total_params = len(self.function_schema)
+            curent_param = list(self.function_schema.keys())[
+                total_params - self.remaining_prams_counter - 1]
+
+            if self.function_schema[curent_param]["type"] == "string":
+                return State.EXPECT_PARAM_VALUE_OPEN, stack
+
+            elif self.function_schema[curent_param]["type"] == "number":
+                return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
+        # -------------
+
+        # parameter value
+        if state == State.EXPECT_PARAM_VALUE_OPEN and token == '"':
+            return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
+
+        if state == State.EXPECT_PARAM_NUM_VALUE_BODY:
+
+            if token == ",":
+                return State.EXPECT_PARAM_KEY_OPEN, stack
+
+            elif token == "}":
+                stack.pop()
+                return State.EXPECT_FINAL_OBJECT_CLOSE, stack
+
+            return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
+
+        if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
+
+            if token.endswith('"'):
+                return State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE, stack
+
+            return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
+
+        if state == State.EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE:
+
+            if token == '"':
+                return State.EXPECT_PARAM_KEY_BODY, stack
+
+            if token == ",":
+                return State.EXPECT_PARAM_KEY_OPEN, stack
+
+            elif token == "}":
+                stack.pop()
+                return State.EXPECT_FINAL_OBJECT_CLOSE, stack
+        # --------------
+
+        # final
+        if state == State.EXPECT_FINAL_OBJECT_CLOSE and token == "}":
+            stack.pop()
+            return State.DONE, stack
+
+        raise ValueError("Invalid transition")
+
+    def stage1(
+        self,
+        prompt: str,
+        max_new_tokens: int = 50
+    ) -> str:
+
+        f_names = list(self.functions_by_name.keys())
+        f_names_trie = Utils.build_trie(f_names)
+
+        # will build this after we know the function
+        parameter_trie = None
+
+        input_ids = model.encode(prompt)[0].tolist()
         generated_ids = []
 
-        trie_cursor = trie
+        state = State.START
+        stack = []
+        # for trie traversal, start with keys trie
+        cur_state = {"cursor": f_names_trie}
+        current_function_name_ids = []
+        current_function_name = None
+        function_schema = None
         for _ in range(max_new_tokens):
             # ids -> logits
             logits = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
-            allowed_ids = self.get_allowed_ids_at_trie_node(trie_cursor)
-            masked_logits = [
-                logits[i] if i in allowed_ids else NEGATIVE_INF for i in range(len(logits))]
+            if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
+                masked_logits = logits.copy()
+                # logits -> next token id
+                next_token_id = masked_logits.index(max(masked_logits))
+                token = id_to_token.get(next_token_id, "")
+                if '"' in token:
+                    token = token[:token.index('"') + 1]
+                    next_token_id = vocab.get(token, "")
+            else:
+                allowed_token_ids = self.allowed_tokens(
+                    state, cur_state)
+                masked_logits = [
+                    log if idx in allowed_token_ids
+                    else NEGATIVE_INF
+                    for idx, log in enumerate(logits)
+                ]
+                # logits -> next token id
+                next_token_id = masked_logits.index(max(masked_logits))
             # -----
 
             # logits -> next token id
-            next_token_id = logits.index(max(masked_logits))
 
             # separate generated ids
             generated_ids.append(next_token_id)
@@ -86,87 +331,41 @@ Answer:
             # next_token_id -> ids
             input_ids.append(next_token_id)
 
-            # Advance the trie cursor
-            trie_cursor = trie_cursor["children"][next_token_id]
+            # save the function name
+            if state == State.EXPECT_NAME_VALUE_BODY:
+                current_function_name_ids.append(next_token_id)
+                if cur_state["cursor"]["children"][next_token_id]["terminal"]:
+                    current_function_name = model.decode(
+                        current_function_name_ids).strip('"')
+            # load the function schema if we just completed the function name
+            if function_schema is None and current_function_name is not None:
+                function_schema = Utils.load_function_schema(
+                    current_function_name, self.functions_by_name)
+                self.function_schema = function_schema
+                self.remaining_prams_counter = len(function_schema.keys())
 
-            # If we completed a valid string, reset cursor to root
-            if trie_cursor["terminal"]:
-                break
-                # trie_cursor = trie
+                # build the trie for parameters
+                parameter_trie = Utils.build_trie(
+                    list(function_schema.keys()))
 
-        return model.decode(generated_ids).strip()
-
-    # ------------------------------------------------------------------
-    # Stage 2: per-parameter constrained decode → argument values
-    # ------------------------------------------------------------------
-
-    def _stage2_extract_args(self, prompt: str, fn_name: str) -> Dict[str, Any]:
-        # extract parameters schema for the selected function
-        fn_def = self.functions_by_name[fn_name]
-        params = fn_def.parameters
-        extracted = {}
-
-        for param_name, param_spec in params.items():
-            param_type = param_spec["type"]
-
-            sub_prompt = (
-                f"You are a parameter extractor for a function call.\n"
-                f"Function: '{fn_name}'\n"
-                f"Parameters to fill: {list(params.keys())}\n"
-                f"User request: \"{prompt}\"\n\n"
-                # f"Extract ONLY the value for the parameter '{param_name}'.\n"
-                f"- Do not output the other parameters.\n"
-                f"- Do not output the parameter name, just the raw value ended with a new line.\n"
-                f"- Do not perform any calculation.\n"
-                f"Example: if the request is 'sum of 1 and 2' and param is 'b', output: 20\n"
-                f"Value of '{param_name}':"
+            # update state
+            state, stack = self.transition(
+                state,
+                next_token_id,
+                stack,
+                cur_state,
+                f_names_trie,
+                parameter_trie
             )
 
-            if param_type == "number":
-                value_str = self._extract_string_arg(
-                    param_type, sub_prompt, NUM_TOKEN_IDS)
-                try:
-                    extracted[param_name] = int(
-                        value_str) if value_str.isdigit() else float(value_str)
-                except ValueError:
-                    # or handle error as needed
-                    extracted[param_name] = value_str
-            else:
-
-                value_str = self._extract_string_arg(
-                    param_type, sub_prompt, FORBIDDEN_STR_TOKEN_IDS)
-                extracted[param_name] = str(value_str)
-        return extracted
-
-    def _extract_string_arg(self, param_type: str, prompt: str, filter_ids: Set[int], max_new_tokens: int = 5) -> str:
-        # prompt -> tokens -> ids
-        input_ids = model.encode(prompt)[0].tolist()
-
-        # for separating genrated from input ids
-        generated_ids = []
-
-        eol_id = model._tokenizer.encode("\n")[0]
-        for _ in range(max_new_tokens):
-            # ids -> logits
-            logits = model.get_logits_from_input_ids(input_ids)
-
-            # -----
-            # logits -> filter (inject constrained decoding)
-            if param_type == "number":
-                masked_logits = [
-                    logits[i] if i in filter_ids else NEGATIVE_INF for i in range(len(logits))]
-            else:
-                masked_logits = [
-                    logits[i] if i not in filter_ids else NEGATIVE_INF for i in range(len(logits))]
-            # -----
-
-            # logits -> next token id
-            next_token_id = logits.index(max(masked_logits))
-            if next_token_id == eol_id or "\n" in model.decode([next_token_id]):
+            states = [
+                State.EXPECT_NAME_VALUE_BODY,
+                State.EXPECT_PARAM_KEY_BODY,
+            ]
+            children = cur_state["cursor"]["children"]
+            if state in states and next_token_id in children:
+                cur_state["cursor"] = children[next_token_id]
+            if state == State.DONE:
                 break
-            # separate generated ids
-            generated_ids.append(next_token_id)
-            # next_token_id -> ids
-            input_ids.append(next_token_id)
 
         return model.decode(generated_ids).strip()
