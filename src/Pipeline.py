@@ -1,83 +1,34 @@
-from enum import Enum, auto
 from pydantic import BaseModel, Field
 from typing import Dict
-import json
 
-from llm_sdk import Small_LLM_Model
-
-NEGATIVE_INF = float('-inf')
-model: Small_LLM_Model = Small_LLM_Model()
-
-
-class State(Enum):
-    # root
-    START = auto()
-
-    # "name" key
-    EXPECT_NAME_KEY_OPEN = auto()
-    EXPECT_NAME_KEY_BODY = auto()
-    EXPECT_NAME_KEY_CLOSE = auto()
-
-    EXPECT_COLON_AFTER_NAME_KEY = auto()
-
-    # "name" value (function name)
-    EXPECT_NAME_VALUE_OPEN = auto()
-    EXPECT_NAME_VALUE_BODY = auto()
-    EXPECT_NAME_VALUE_CLOSE = auto()
-
-    EXPECT_COMMA_AFTER_NAME = auto()
-
-    # "parameters" key
-    EXPECT_PARAMS_KEY_OPEN = auto()
-    EXPECT_PARAMS_KEY_BODY = auto()
-    EXPECT_PARAMS_KEY_CLOSE = auto()
-
-    EXPECT_COLON_AFTER_PARAMS_KEY = auto()
-
-    # parameters object
-    EXPECT_PARAMS_OBJECT_OPEN = auto()
-
-    # parameter key
-    EXPECT_PARAM_KEY_OPEN = auto()
-    EXPECT_PARAM_KEY_BODY = auto()
-    EXPECT_PARAM_KEY_CLOSE = auto()
-
-    EXPECT_COLON_AFTER_PARAM_KEY = auto()
-
-    # parameter value
-    EXPECT_PARAM_NUM_VALUE_BODY = auto()
-
-    EXPECT_PARAM_VALUE_OPEN = auto()
-    EXPECT_PARAM_STRING_VALUE_BODY = auto()
-    EXPECT_PARAM_VALUE_CLOSE = auto()
-
-    EXPECT_NEXT_PARAM_OR_OBJECT_CLOSE = auto()
-
-    # final
-    EXPECT_FINAL_OBJECT_CLOSE = auto()
-
-    DONE = auto()
-
-
-path = model.get_path_to_vocab_file()
-
-with open(path, "r", encoding="utf-8") as f:
-    vocab = json.load(f)
-
-# a dict for reverse lookup from token id to token text
-id_to_token = {v: k for k, v in vocab.items()}
+from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab
 
 
 class Pipeline(BaseModel):
-    functions_by_name: Dict = Field(...,
-                                    description="List of function definitions")
-    stack: list = Field(
-        default=[], description="Stack to manage nested structures")
-    remaining_prams_counter: int = Field(
-        default=0, description="Counter for remaining parameters to parse")
-    function_schema: Dict = {}
+    functions_by_name: Dict = Field(
+        ...,
+        description="List of function definitions"
+    )
 
-    def allowed_tokens(self, state, cur_state):
+    stack: list = Field(
+        default=[],
+        description="Stack to manage nested structures"
+    )
+
+    remaining_prams_counter: int = Field(
+        default=0,
+        description="Counter for remaining parameters to parse"
+    )
+    function_schema: Dict = Field(
+        default={},
+        description="Schema for the selected function parameters"
+    )
+
+    def allowed_tokens(
+        self,
+        state,
+        cur_state
+    ):
         allowed_strings = []
 
         # root
@@ -324,30 +275,17 @@ class Pipeline(BaseModel):
 
         raise ValueError("Invalid transition")
 
-    def build_trie(self, strings):
-        trie = {"children": {}, "terminal": False}
-
-        for name in strings:
-            node = trie
-
-            for id in model.encode(name)[0].tolist():
-                if id not in node["children"]:
-                    node["children"][id] = {
-                        "children": {}, "terminal": False}
-
-                node = node["children"][id]
-
-            node["terminal"] = True
-
-        return trie
-
-    def stage1(self, prompt: str, max_new_tokens: int = 50) -> str:
+    def stage1(
+        self,
+        prompt: str,
+        max_new_tokens: int = 50
+    ) -> str:
 
         # keys = ['parameters', 'name']
         # keys_trie = self.build_trie(keys)
 
         f_names = list(self.functions_by_name.keys())
-        f_names_trie = self.build_trie(f_names)
+        f_names_trie = Utils.build_trie(f_names)
 
         # will build this after we know the function
         parameter_trie = None
@@ -421,13 +359,13 @@ class Pipeline(BaseModel):
                         current_function_name_ids).strip('"')
             # load the function schema if we just completed the function name
             if function_schema is None and current_function_name is not None:
-                function_schema = self.load_function_schema(
-                    current_function_name)
+                function_schema = Utils.load_function_schema(
+                    current_function_name, self.functions_by_name)
                 self.function_schema = function_schema
                 self.remaining_prams_counter = len(function_schema.keys())
 
                 # build the trie for parameters
-                parameter_trie = self.build_trie(
+                parameter_trie = Utils.build_trie(
                     list(function_schema.keys()))
 
             # update state
@@ -454,6 +392,3 @@ class Pipeline(BaseModel):
                 break
 
         return model.decode(generated_ids).strip()
-
-    def load_function_schema(self, name: str):
-        return self.functions_by_name[name].parameters

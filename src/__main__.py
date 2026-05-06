@@ -5,23 +5,7 @@ import json
 from src.Pipeline import Pipeline
 from src.Parser import Parser
 from src.Models import FunctionDefinition
-
-
-def build_prompt(prompt_text: str, functions: List[FunctionDefinition]) -> str:
-    functions_text = "\n".join(
-        f"- {f.name}(" +
-        ", ".join(f"{k}: {v['type']}" for k, v in f.parameters.items()) +
-        ")"
-        for f in functions
-    )
-
-    return f"""
-Functions:
-{functions_text}
-
-Request: {prompt_text}
-JSON:
-""".strip()
+from src.Utils import Utils
 
 
 def main():
@@ -48,7 +32,7 @@ def main():
         result = {}
         result["prompt"] = prompt
         s = time.time()
-        built_prompt = build_prompt(prompt, functions)
+        built_prompt = Utils.build_prompt(prompt, functions)
         output = pipline.stage1(built_prompt, max_new_tokens=100)
         result.update(json.loads(output))
         total_calls.append(result)
