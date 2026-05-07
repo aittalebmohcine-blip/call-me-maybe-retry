@@ -61,12 +61,12 @@ class Utils(BaseModel):
         )
 
         return f"""
-    Functions:
-    {functions_text}
+Functions:
+{functions_text}
 
-    Request: {prompt_text}
-    JSON:
-    """.strip()
+Request: {prompt_text}
+JSON:
+""".strip()
 
 
 class State(Enum):
