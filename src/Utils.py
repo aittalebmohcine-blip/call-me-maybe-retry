@@ -29,7 +29,7 @@ class Utils(BaseModel):
     def build_trie(
         strings: List[str]
     ) -> Dict[str, Dict | bool]:
-        trie: Dict = {"children": {}, "terminal": False}
+        trie: Dict[str, Any] = {"children": {}, "terminal": False}
 
         name: str
         node: Dict
