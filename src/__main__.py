@@ -8,7 +8,7 @@ from src.Models import FunctionDefinition
 from src.Utils import Utils
 
 
-def main():
+def main() -> None:
     # -- loading and parsing --
     parser = Parser()
 
