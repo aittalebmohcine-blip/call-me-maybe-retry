@@ -1,6 +1,7 @@
 import time
-from typing import Dict, Any
+from typing import Dict, Any, List
 import json
+import argparse
 
 from src.Pipeline import Pipeline
 from src.Parser import Parser
@@ -9,11 +10,34 @@ from src.Utils import Utils
 
 
 def main() -> None:
-    # -- loading and parsing --
-    parser: Parser = Parser()
+    # input parsing
+    arg_parser = argparse.ArgumentParser()
+
+    arg_parser.add_argument(
+        "--functions_definitions",
+        default="data/input/function_definitions.json"
+    )
+
+    arg_parser.add_argument(
+        "--input",
+        default="data/input/function_calling_tests.json"
+    )
+
+    arg_parser.add_argument(
+        "--output",
+        default="data/output/function_calling_results.json"
+    )
+    args = arg_parser.parse_args()
+
+    # -- loading and parsing files --
+    parser: Parser = Parser(
+        func_defs_path=args.functions_definitions,
+        prompts_path=args.input,
+        path_to_ouput_file=args.output
+    )
 
     # load functions definitions into model objects
-    functions: list[FunctionDefinition] = parser.parse_func_defs()
+    functions: List[FunctionDefinition] = parser.parse_func_defs()
 
     # store functions by names for easy access
     functions_by_name: Dict[str, "FunctionDefinition"] = {}
@@ -21,14 +45,14 @@ def main() -> None:
         functions_by_name[func.name] = func
 
     # load prompts into a list
-    prompts: list[str] = parser.parse_prompts()
+    prompts: List[str] = parser.parse_prompts()
 
     # -- generation pipeline --
     pipline: Pipeline = Pipeline(functions_by_name=functions_by_name)
 
     ref_s: float = time.time()
-    total_calls: list[Dict[str, Any]] = []
-    for prompt in prompts:
+    total_calls: List[Dict[str, Any]] = []
+    for prompt in prompts[:1]:
         result: Dict[str, Any] = {}
         result["prompt"] = prompt
         s: float = time.time()
@@ -40,8 +64,7 @@ def main() -> None:
         print(f"Execution time: {time.time() - s:.2f} seconds")
 
     # --- Save ouput ---
-    with open("data/output/output.json", "w") as f:
-        json.dump(total_calls, f, indent=2)
+    parser.dump_output(total_calls)
 
     print(f"\ntotal time: {time.time() - ref_s:.2f} seconds")
 
