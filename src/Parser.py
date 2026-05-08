@@ -33,8 +33,14 @@ class Parser(BaseModel):
                 f" to input file '{self.func_defs_path}'"
             )
 
+        except json.JSONDecodeError:
+            raise ValueError(f"Invalid JSON in file: {self.func_defs_path}")
+
         except IsADirectoryError:
             raise ValueError(f"'{self.func_defs_path}' is a directory !")
+
+        except OSError as e:
+            raise ValueError(f"File error: {e}")
 
         # extract function definitions objs
         for element in data:
@@ -62,6 +68,12 @@ class Parser(BaseModel):
 
         except IsADirectoryError:
             raise ValueError(f"'{self.prompts_path}' is a directory !")
+
+        except json.JSONDecodeError:
+            raise ValueError(f"Invalid JSON in file: {self.prompts_path}")
+
+        except OSError as e:
+            raise ValueError(f"File error: {e}")
 
         # extract prompts
         for element in data:
