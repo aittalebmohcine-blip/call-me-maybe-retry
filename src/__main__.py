@@ -1,5 +1,5 @@
 import time
-from typing import Dict
+from typing import Dict, Any
 import json
 
 from src.Pipeline import Pipeline
@@ -10,10 +10,10 @@ from src.Utils import Utils
 
 def main() -> None:
     # -- loading and parsing --
-    parser = Parser()
+    parser: Parser = Parser()
 
     # load functions definitions into model objects
-    functions = parser.parse_func_defs()
+    functions: list[FunctionDefinition] = parser.parse_func_defs()
 
     # store functions by names for easy access
     functions_by_name: Dict[str, "FunctionDefinition"] = {}
@@ -21,19 +21,19 @@ def main() -> None:
         functions_by_name[func.name] = func
 
     # load prompts into a list
-    prompts = parser.parse_prompts()
+    prompts: list[str] = parser.parse_prompts()
 
     # -- generation pipeline --
-    pipline = Pipeline(functions_by_name=functions_by_name)
+    pipline: Pipeline = Pipeline(functions_by_name=functions_by_name)
 
-    ref_s = time.time()
-    total_calls = []
+    ref_s: float = time.time()
+    total_calls: list[Dict[str, Any]] = []
     for prompt in prompts:
-        result = {}
+        result: Dict[str, Any] = {}
         result["prompt"] = prompt
-        s = time.time()
-        built_prompt = Utils.build_prompt(prompt, functions)
-        output = pipline.pipline(built_prompt, max_new_tokens=100)
+        s: float = time.time()
+        built_prompt: str = Utils.build_prompt(prompt, functions)
+        output: str = pipline.pipline(built_prompt, max_new_tokens=100)
         result.update(json.loads(output))
         total_calls.append(result)
         print("Output:\n", result)

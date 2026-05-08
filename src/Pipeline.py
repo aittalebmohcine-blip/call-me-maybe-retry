@@ -2,15 +2,16 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Union, Any, Tuple, Optional
 
 from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab
+from src.Models import FunctionDefinition
 
 
 class Pipeline(BaseModel):
-    functions_by_name: Dict = Field(
+    functions_by_name: Dict[str, "FunctionDefinition"] = Field(
         ...,
         description="List of function definitions"
     )
 
-    stack: list = Field(
+    stack: List[str] = Field(
         default=[],
         description="Stack to manage nested structures"
     )
@@ -19,7 +20,7 @@ class Pipeline(BaseModel):
         default=0,
         description="Counter for remaining parameters to parse"
     )
-    function_schema: Dict = Field(
+    function_schema: Dict[str, Dict[str, str]] = Field(
         default={},
         description="Schema for the selected function parameters"
     )
@@ -28,8 +29,8 @@ class Pipeline(BaseModel):
         self,
         state: State,
         cur_state: Dict[str, Any]
-    ) -> Any:
-        allowed_strings = []
+    ) -> set[int]:
+        allowed_strings: List[str] = []
 
         # root
         if state == State.START:
@@ -54,7 +55,7 @@ class Pipeline(BaseModel):
             allowed_strings = ['"']
 
         elif state == State.EXPECT_NAME_VALUE_BODY:
-            return cur_state["cursor"]["children"]
+            return set(cur_state["cursor"]["children"])
 
         elif state == State.EXPECT_NAME_VALUE_CLOSE:
             allowed_strings = ['"']
@@ -88,7 +89,7 @@ class Pipeline(BaseModel):
             allowed_strings = ['"']
 
         elif state == State.EXPECT_PARAM_KEY_BODY:
-            return cur_state["cursor"]["children"]
+            return set(cur_state["cursor"]["children"])
 
         elif state == State.EXPECT_PARAM_KEY_CLOSE:
             allowed_strings = ['"']
@@ -122,7 +123,7 @@ class Pipeline(BaseModel):
             allowed_strings = []
 
         # ---- APPLY THE RULE HERE ----
-        allowed_token_ids = set()
+        allowed_token_ids: set[int] = set()
 
         for text in allowed_strings:
             # or tokenizer equivalent
@@ -281,38 +282,40 @@ class Pipeline(BaseModel):
         max_new_tokens: int = 50
     ) -> str:
 
-        f_names = list(self.functions_by_name.keys())
-        f_names_trie = Utils.build_trie(f_names)
+        f_names: List[str] = list(self.functions_by_name.keys())
+        f_names_trie: Dict[
+            str, Union[Dict[str, Any], bool]
+        ] = Utils.build_trie(f_names)
 
         # will build this after we know the function
-        parameter_trie = None
+        parameter_trie: Optional[Dict[str, Union[Dict[str, Any], bool]]] = None
 
-        input_ids = model.encode(prompt)[0].tolist()
-        generated_ids = []
+        input_ids: List[int] = model.encode(prompt)[0].tolist()
+        generated_ids: List[int] = []
 
-        state = State.START
+        state: State = State.START
         stack: List[Any] = []
         # for trie traversal, start with keys trie
         cur_state: Dict[str, Any] = {"cursor": f_names_trie}
-        current_function_name_ids = []
-        current_function_name = None
-        function_schema = None
+        current_function_name_ids: List[int] = []
+        current_function_name: Optional[str] = None
+        function_schema: Optional[Dict[str, Dict[str, str]]] = None
         for _ in range(max_new_tokens):
             # ids -> logits
-            logits = model.get_logits_from_input_ids(input_ids)
+            logits: List[float] = model.get_logits_from_input_ids(input_ids)
 
             # -----
             # logits -> filter (inject constrained decoding)
             if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
-                masked_logits = logits.copy()
+                masked_logits: List[float] = logits.copy()
                 # logits -> next token id
-                next_token_id = masked_logits.index(max(masked_logits))
-                token = id_to_token.get(next_token_id, "")
+                next_token_id: int = masked_logits.index(max(masked_logits))
+                token: str = id_to_token.get(next_token_id, "")
                 if '"' in token:
                     token = token[:token.index('"') + 1]
-                    next_token_id = vocab.get(token, "")
+                    next_token_id = vocab.get(token, 0)
             else:
-                allowed_token_ids = self._allowed_tokens(
+                allowed_token_ids: set[int] = self._allowed_tokens(
                     state, cur_state)
                 masked_logits = [
                     log if idx in allowed_token_ids
@@ -334,7 +337,6 @@ class Pipeline(BaseModel):
             # save the function name
             if state == State.EXPECT_NAME_VALUE_BODY:
                 current_function_name_ids.append(next_token_id)
-                # type: ignore [index]
                 if cur_state["cursor"]["children"][next_token_id]["terminal"]:
                     current_function_name = model.decode(
                         current_function_name_ids).strip('"')
@@ -359,14 +361,14 @@ class Pipeline(BaseModel):
                 parameter_trie
             )
 
-            states = [
+            states: List[State] = [
                 State.EXPECT_NAME_VALUE_BODY,
                 State.EXPECT_PARAM_KEY_BODY,
             ]
-            children = cur_state["cursor"]["children"]
+            children: Dict[int, Any] = cur_state["cursor"]["children"]
             if state in states and next_token_id in children:
                 cur_state["cursor"] = children[next_token_id]
             if state == State.DONE:
                 break
 
-        return model.decode(generated_ids).strip()
+        return str(model.decode(generated_ids).strip())

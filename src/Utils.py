@@ -12,7 +12,7 @@ NEGATIVE_INF: float = float('-inf')
 
 path_to_vocab_file: str = model.get_path_to_vocab_file()
 with open(path_to_vocab_file, "r", encoding="utf-8") as f:
-    vocab: Any = json.load(f)
+    vocab: Dict[str, int] = json.load(f)
 # a dict for reverse lookup from token id to token text
 id_to_token: Dict[int, str] = {v: k for k, v in vocab.items()}
 
@@ -32,7 +32,7 @@ class Utils(BaseModel):
         trie: Dict[str, Any] = {"children": {}, "terminal": False}
 
         name: str
-        node: Dict
+        node: Dict[str, Any]
         for name in strings:
             node = trie
 
@@ -60,13 +60,14 @@ class Utils(BaseModel):
             for f in functions
         )
 
-        return f"""
+        formatted_prompt: str = f"""
 Functions:
 {functions_text}
 
 Request: {prompt_text}
 JSON:
 """.strip()
+        return formatted_prompt
 
 
 class State(Enum):
