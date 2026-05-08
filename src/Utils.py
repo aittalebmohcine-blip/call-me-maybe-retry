@@ -106,6 +106,8 @@ class State(Enum):
     EXPECT_COLON_AFTER_PARAM_KEY = auto()
 
     # parameter value
+    EXPECT_PARAM_BOOL_VALUE_BODY = auto()
+
     EXPECT_PARAM_NUM_VALUE_BODY = auto()
 
     EXPECT_PARAM_VALUE_OPEN = auto()

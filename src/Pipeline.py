@@ -99,6 +99,12 @@ class Pipeline(BaseModel):
         # --------
 
         # ----parameter value----
+        elif state == State.EXPECT_PARAM_BOOL_VALUE_BODY:
+            if self.remaining_prams_counter > 0:
+                allowed_strings = ["true", "false", ","]
+            else:
+                allowed_strings = ["true", "false", "}"]
+
         elif state == State.EXPECT_PARAM_NUM_VALUE_BODY:
             if self.remaining_prams_counter > 0:
                 allowed_strings = list("0123456789-+.eE^,")
@@ -232,12 +238,17 @@ class Pipeline(BaseModel):
 
             elif self.function_schema[curent_param]["type"] == "number":
                 return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
+
+            elif self.function_schema[curent_param]["type"] == "boolean":
+                return State.EXPECT_PARAM_BOOL_VALUE_BODY, stack
         # -------------
 
         # parameter value
+        # arg is str
         if state == State.EXPECT_PARAM_VALUE_OPEN and token == '"':
             return State.EXPECT_PARAM_STRING_VALUE_BODY, stack
 
+        # arg is number
         if state == State.EXPECT_PARAM_NUM_VALUE_BODY:
 
             if token == ",":
@@ -248,6 +259,18 @@ class Pipeline(BaseModel):
                 return State.EXPECT_FINAL_OBJECT_CLOSE, stack
 
             return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
+
+        # arg is bool
+        if state == State.EXPECT_PARAM_BOOL_VALUE_BODY:
+
+            if token == ",":
+                return State.EXPECT_PARAM_KEY_OPEN, stack
+
+            elif token == "}":
+                stack.pop()
+                return State.EXPECT_FINAL_OBJECT_CLOSE, stack
+
+            return State.EXPECT_PARAM_BOOL_VALUE_BODY, stack
 
         if state == State.EXPECT_PARAM_STRING_VALUE_BODY:
 
