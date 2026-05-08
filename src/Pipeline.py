@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Union, Any, Set, Tuple, cast, Optional
+from typing import Dict, List, Union, Any, Tuple, Optional
 
 from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab
 
@@ -24,7 +24,7 @@ class Pipeline(BaseModel):
         description="Schema for the selected function parameters"
     )
 
-    def allowed_tokens(
+    def _allowed_tokens(
         self,
         state: State,
         cur_state: Dict[str, Any]
@@ -134,7 +134,7 @@ class Pipeline(BaseModel):
 
         return allowed_token_ids
 
-    def transition(
+    def _transition(
         self,
         state: State,
         token_id: int,
@@ -275,7 +275,7 @@ class Pipeline(BaseModel):
 
         raise ValueError("Invalid transition")
 
-    def stage1(
+    def pipline(
         self,
         prompt: str,
         max_new_tokens: int = 50
@@ -293,7 +293,7 @@ class Pipeline(BaseModel):
         state = State.START
         stack: List[Any] = []
         # for trie traversal, start with keys trie
-        cur_state = {"cursor": f_names_trie}
+        cur_state: Dict[str, Any] = {"cursor": f_names_trie}
         current_function_name_ids = []
         current_function_name = None
         function_schema = None
@@ -312,7 +312,7 @@ class Pipeline(BaseModel):
                     token = token[:token.index('"') + 1]
                     next_token_id = vocab.get(token, "")
             else:
-                allowed_token_ids = self.allowed_tokens(
+                allowed_token_ids = self._allowed_tokens(
                     state, cur_state)
                 masked_logits = [
                     log if idx in allowed_token_ids
@@ -334,7 +334,8 @@ class Pipeline(BaseModel):
             # save the function name
             if state == State.EXPECT_NAME_VALUE_BODY:
                 current_function_name_ids.append(next_token_id)
-                if cur_state["cursor"]["children"][next_token_id]["terminal"]:  # type: ignore [index]
+                # type: ignore [index]
+                if cur_state["cursor"]["children"][next_token_id]["terminal"]:
                     current_function_name = model.decode(
                         current_function_name_ids).strip('"')
             # load the function schema if we just completed the function name
@@ -349,7 +350,7 @@ class Pipeline(BaseModel):
                     list(function_schema.keys()))
 
             # update state
-            state, stack = self.transition(
+            state, stack = self._transition(
                 state,
                 next_token_id,
                 stack,
@@ -362,7 +363,7 @@ class Pipeline(BaseModel):
                 State.EXPECT_NAME_VALUE_BODY,
                 State.EXPECT_PARAM_KEY_BODY,
             ]
-            children = cast(Dict[int, Any], cur_state["cursor"]["children"])
+            children = cur_state["cursor"]["children"]
             if state in states and next_token_id in children:
                 cur_state["cursor"] = children[next_token_id]
             if state == State.DONE:
