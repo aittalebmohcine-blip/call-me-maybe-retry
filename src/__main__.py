@@ -98,5 +98,7 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        print("\nExiting the program...")
     except Exception as e:
         print(e)
