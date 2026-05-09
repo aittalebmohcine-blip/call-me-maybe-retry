@@ -23,36 +23,3 @@ class FunctionDefinition(BaseModel):
     returns: Dict[str, str] = Field(...,
                                     description="What the function returns")
 
-
-class FunctionCallOutput(BaseModel):
-    """Represents the output of parsing a function call from a prompt.
-    
-    This model captures the extracted function call information including the
-    original prompt, the identified function name, and the parsed parameters.
-    
-    Attributes:
-        prompt: The original user prompt.
-        name: The name of the function identified to fulfill the prompt.
-        parameters: Extracted function parameters with their values.
-    """
-    prompt: str = Field(..., description="The user prompt")
-    name: str = Field(
-        ...,
-        description="The function name coresponding to the prompt"
-    )
-    parameters: Dict[str, Any] = Field(
-        ...,
-        description="Extratcted parameters from the prompt"
-    )
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert the model to a dictionary representation.
-        
-        Returns:
-            A dictionary with keys 'prompt', 'name', and 'parameters'.
-        """
-        return {
-            "prompt": self.prompt,
-            "name": self.name,
-            "parameters": self.parameters
-        }
