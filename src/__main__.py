@@ -52,7 +52,11 @@ def main() -> None:
 
     ref_s: float = time.time()
     total_calls: List[Dict[str, Any]] = []
-    for prompt in prompts[:1]:
+    for prompt in prompts:
+        print(f"\nProcessing prompt: '{prompt}'")
+        if not prompt:
+            print("Warning: skipped empty prompt")
+            continue
         result: Dict[str, Any] = {}
         result["prompt"] = prompt
         s: float = time.time()
