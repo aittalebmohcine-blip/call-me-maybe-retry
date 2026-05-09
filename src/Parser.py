@@ -112,7 +112,8 @@ class Parser(BaseModel):
 
         # extract prompts
         for element in data:
-            prompts.append(element["prompt"])
+            if element.get("prompt"):
+                prompts.append(element["prompt"])
 
         return prompts
 
