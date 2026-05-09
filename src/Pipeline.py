@@ -7,13 +7,14 @@ from src.Models import FunctionDefinition
 
 class Pipeline(BaseModel):
     """Orchestrates constrained decoding for JSON-formatted function calls.
-    
+
     Implements a state machine-based approach to generate valid JSON function
     calls from an LLM by constraining token generation at each step based on
     the current parsing state and grammar rules.
-    
+
     Attributes:
-        functions_by_name: Dictionary mapping function names to their definitions.
+        functions_by_name: Dictionary mapping functionnames to their
+        definitions.
         stack: Stack for tracking nested structures (objects/arrays).
         remaining_prams_counter: Counter for tracking unparsed parameters.
         function_schema: Current function's parameter schema being parsed.
@@ -43,16 +44,17 @@ class Pipeline(BaseModel):
         cur_state: Dict[str, Any]
     ) -> set[int]:
         """Determine valid token IDs for the current parsing state.
-        
-        Based on the current state in the JSON parsing state machine, determines
+
+        Based on the current state in the JSON parsing state machine,
+        determines
         which tokens are grammatically valid. Returns their token IDs for use
         in logit masking during decoding.
-        
+
         Args:
             state: The current state in the parsing state machine.
             cur_state: Dictionary tracking current parsing context, including
                 the cursor position in the trie.
-                
+
         Returns:
             A set of token IDs that are valid in this state.
         """
@@ -177,11 +179,12 @@ class Pipeline(BaseModel):
         parameter_trie: Optional[Dict[str, Union[Dict[str, Any], bool]]]
     ) -> Tuple[State, List[Any]]:
         """Transition to the next state based on the current token.
-        
-        Implements the state transition logic for the JSON parsing state machine.
+
+        Implements the state transition logic for the JSON parsing state
+        machine.
         Updates the parsing context (stack, cursor position) and returns the
         next state and updated stack.
-        
+
         Args:
             state: The current parsing state.
             token_id: The token ID of the next generated token.
@@ -189,10 +192,10 @@ class Pipeline(BaseModel):
             cur_state: Current parsing context including trie cursor.
             f_names_trie: Trie of valid function names.
             parameter_trie: Trie of valid parameter names for current function.
-            
+
         Returns:
             A tuple of (next_state, updated_stack).
-            
+
         Raises:
             ValueError: If the token is invalid for the current state.
         """
@@ -351,20 +354,21 @@ class Pipeline(BaseModel):
         max_new_tokens: int = 50
     ) -> str:
         """Generate a constrained JSON function call from a prompt.
-        
+
         Orchestrates the generation pipeline:
         1. Builds tries for function names and parameters
         2. Encodes the prompt to token IDs
-        3. Iteratively generates tokens while enforcing JSON grammar constraints
+        3. Iteratively generates tokens while enforcing JSON grammar
+        constraints
         4. Returns the generated JSON function call
-        
+
         The state machine ensures valid JSON structure throughout generation,
         preventing malformed outputs.
-        
+
         Args:
             prompt: The formatted prompt containing functions and user request.
             max_new_tokens: Maximum number of tokens to generate (default: 50).
-            
+
         Returns:
             A JSON string representing the function call with structure:
             {"name": "function_name", "parameters": {...}}

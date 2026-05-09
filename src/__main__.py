@@ -12,15 +12,16 @@ from src.Utils import Utils
 
 def main() -> None:
     """Main entry point for the function calling pipeline.
-    
+
     Orchestrates the complete workflow:
     1. Parses command-line arguments for input/output file paths
     2. Loads function definitions and prompts from JSON files
     3. Processes each prompt through the generation pipeline
     4. Saves results to the specified output file
-    
+
     Raises:
-        ValueError: If attempting to overwrite protected files (.py) or system files.
+        ValueError: If attempting to overwrite protected
+        files (.py) or system files.
     """
     # input parsing
     forbidden_files = {
