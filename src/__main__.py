@@ -2,6 +2,7 @@ import time
 from typing import Dict, Any, List
 import json
 import argparse
+from pathlib import Path
 
 from src.Pipeline import Pipeline
 from src.Parser import Parser
@@ -11,6 +12,15 @@ from src.Utils import Utils
 
 def main() -> None:
     # input parsing
+    forbidden_files = {
+        "pyproject.toml",
+        "uv.lock",
+    }
+
+    forbidden_suffixes = {
+        ".py",
+    }
+
     arg_parser = argparse.ArgumentParser()
 
     arg_parser.add_argument(
@@ -27,7 +37,19 @@ def main() -> None:
         "--output",
         default="data/output/function_calling_results.json"
     )
+
     args = arg_parser.parse_args()
+
+    # --- protect against writing to source files ---
+    output_path = Path(args.output).resolve()
+
+    if output_path.name in forbidden_files:
+        print("\nRefusing to overwrite protected file.")
+        return
+    if output_path.suffix in forbidden_suffixes:
+        print("\nRefusing to overwrite source file.")
+        return
+    # ---------------
 
     # -- loading and parsing files --
     parser: Parser = Parser(
