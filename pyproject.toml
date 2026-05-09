@@ -1,11 +1,14 @@
 [project]
-name = "call-me-maybe-retry"
+name = "call-me-maybe"
 version = "0.1.0"
-description = "Add your description here"
+description = "Does LLMs speak the language of computers? We’ll find out"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=2.2.6",
     "pydantic>=2.13.3",
-    "torch>=2.11.0",
+    "llm_sdk",
 ]
+
+[tool.uv.sources]
+llm_sdk = { path = "./llm_sdk" }
