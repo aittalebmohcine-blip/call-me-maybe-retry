@@ -18,17 +18,49 @@ id_to_token: Dict[int, str] = {v: k for k, v in vocab.items()}
 
 
 class Utils(BaseModel):
+    """Utility functions for prompt building and trie construction.
+    
+    Provides static helper methods for loading function schemas, building
+    token-based tries, and formatting prompts for the LLM pipeline.
+    """
     @staticmethod
     def load_function_schema(
         name: str,
         functions_by_name: Dict[str, FunctionDefinition]
     ) -> Dict[str, Dict[str, str]]:
+        """Load parameter schema for a function by name.
+        
+        Args:
+            name: The name of the function.
+            functions_by_name: A dictionary mapping function names to
+                FunctionDefinition objects.
+                
+        Returns:
+            The parameters dictionary for the specified function.
+            
+        Raises:
+            KeyError: If the function name is not found in the dictionary.
+        """
         return functions_by_name[name].parameters
 
     @staticmethod
     def build_trie(
         strings: List[str]
     ) -> Dict[str, Dict | bool]:
+        """Build a token-level trie from a list of strings.
+        
+        Constructs a trie where each node represents a token (via the model's
+        tokenizer) and terminal nodes mark complete strings in the list.
+        Used for constraining token generation during decoding.
+        
+        Args:
+            strings: A list of strings to insert into the trie.
+            
+        Returns:
+            A trie structure represented as nested dictionaries with keys
+            being token IDs, 'children' containing child nodes, and 'terminal'
+            indicating if this node marks a complete string.
+        """
         trie: Dict[str, Any] = {"children": {}, "terminal": False}
 
         name: str
@@ -53,6 +85,19 @@ class Utils(BaseModel):
         prompt_text: str,
         functions: List[FunctionDefinition]
     ) -> str:
+        """Format a prompt with available functions for the LLM.
+        
+        Creates a formatted string that includes a list of available functions
+        with their signatures and the user's request, formatted for LLM input.
+        
+        Args:
+            prompt_text: The user's request or prompt.
+            functions: List of available function definitions to include.
+            
+        Returns:
+            A formatted prompt string ready for LLM processing, containing
+            the function list and the user's request.
+        """
         functions_text: str = "\n".join(
             f"- {f.name}(" +
             ", ".join(f"{k}: {v['type']}" for k, v in f.parameters.items()) +
@@ -71,6 +116,12 @@ JSON:
 
 
 class State(Enum):
+    """Enum representing states in the JSON parsing state machine.
+    
+    Defines all possible states during constrained decoding of function
+    call JSON output. States track parsing progress through the JSON
+    structure (opening/closing braces, key/value pairs, etc.).
+    """
     # root
     START = auto()
 

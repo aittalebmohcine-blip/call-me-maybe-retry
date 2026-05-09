@@ -8,6 +8,17 @@ from src.Models import FunctionDefinition
 
 
 class Parser(BaseModel):
+    """Handles parsing of function definitions and prompts from JSON files.
+    
+    Provides utilities for reading function definitions and test prompts from
+    JSON files, and writing results back to JSON output files. Includes
+    comprehensive error handling for file access issues.
+    
+    Attributes:
+        func_defs_path: Path to the JSON file containing function definitions.
+        prompts_path: Path to the JSON file containing test prompts.
+        path_to_ouput_file: Path where output results will be written.
+    """
     func_defs_path: str = Field(
         default="data/input/functions_definition.json")
 
@@ -17,6 +28,18 @@ class Parser(BaseModel):
         default="data/output/function_calling_result.json")
 
     def parse_func_defs(self) -> List["FunctionDefinition"]:
+        """Load and parse function definitions from JSON file.
+        
+        Reads the function definitions file and deserializes it into
+        FunctionDefinition model objects.
+        
+        Returns:
+            A list of FunctionDefinition objects parsed from the input file.
+            
+        Raises:
+            ValueError: If the file is not found, cannot be read, contains
+                invalid JSON, is a directory, or has other I/O errors.
+        """
         functions: List["FunctionDefinition"] = []
 
         # load data from the file
@@ -49,6 +72,18 @@ class Parser(BaseModel):
         return functions
 
     def parse_prompts(self) -> List[str]:
+        """Load and parse prompts from JSON file.
+        
+        Reads the prompts file and extracts the prompt strings. Expects the
+        JSON file to contain a list of objects with a 'prompt' field.
+        
+        Returns:
+            A list of prompt strings extracted from the input file.
+            
+        Raises:
+            ValueError: If the file is not found, cannot be read, contains
+                invalid JSON, is a directory, or has other I/O errors.
+        """
         prompts: List[str] = []
 
         # load data from the file
@@ -82,6 +117,18 @@ class Parser(BaseModel):
         return prompts
 
     def dump_output(self, ouput: List[Dict]) -> None:
+        """Write results to output JSON file.
+        
+        Serializes the output data to a JSON file at the configured path,
+        creating parent directories as needed. Uses 2-space indentation.
+        
+        Args:
+            ouput: A list of dictionaries to serialize to JSON.
+            
+        Raises:
+            ValueError: If the output file path is inaccessible due to
+                permission errors, is a directory, or has other I/O errors.
+        """
         try:
             output_path = Path(self.path_to_ouput_file)
             output_path.parent.mkdir(parents=True, exist_ok=True)
