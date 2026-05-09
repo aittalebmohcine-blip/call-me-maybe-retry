@@ -1,10 +1,11 @@
 .PHONY: install run debug clean lint
 
+run:
+	uv run python -m src
+
 install:
 	uv sync
 
-run:
-	uv run python -m src
 
 debug:
 	uv run python -m pdb -m src
