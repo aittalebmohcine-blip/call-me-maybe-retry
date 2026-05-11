@@ -351,7 +351,6 @@ class Pipeline(BaseModel):
     def pipline(
         self,
         prompt: str,
-        max_new_tokens: int = 50
     ) -> str:
         """Generate a constrained JSON function call from a prompt.
 
@@ -367,7 +366,6 @@ class Pipeline(BaseModel):
 
         Args:
             prompt: The formatted prompt containing functions and user request.
-            max_new_tokens: Maximum number of tokens to generate (default: 50).
 
         Returns:
             A JSON string representing the function call with structure:
@@ -391,7 +389,7 @@ class Pipeline(BaseModel):
         current_function_name_ids: List[int] = []
         current_function_name: Optional[str] = None
         function_schema: Optional[Dict[str, Dict[str, str]]] = None
-        for _ in range(max_new_tokens):
+        while True:
             # ids -> logits
             logits: List[float] = model.get_logits_from_input_ids(input_ids)
 

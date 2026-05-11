@@ -95,7 +95,7 @@ def main() -> None:
         result["prompt"] = prompt
         s: float = time.time()
         built_prompt: str = Utils.build_prompt(prompt, functions)
-        output: str = pipline.pipline(built_prompt, max_new_tokens=100)
+        output: str = pipline.pipline(built_prompt)
         result.update(json.loads(output))
         total_calls.append(result)
         print("Output:\n", result)
