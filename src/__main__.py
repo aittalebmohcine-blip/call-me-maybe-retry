@@ -97,6 +97,14 @@ def main() -> None:
         built_prompt: str = Utils.build_prompt(prompt, functions)
         output: str = pipline.pipline(built_prompt)
         result.update(json.loads(output))
+
+        # make params compatible with theire types
+        curent_fn_name = result.get("name", "")
+        cur_fn_schema = functions_by_name[curent_fn_name].parameters
+        for k in result["parameters"]:
+            if cur_fn_schema[k]["type"] == "number":
+                result["parameters"][k] = float(result["parameters"][k])
+
         total_calls.append(result)
         print("Output:\n", result)
         print(f"Execution time: {time.time() - s:.2f} seconds")
