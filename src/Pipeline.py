@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List, Union, Any, Tuple, Optional
 
-from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab, HARD_LIMIT
+from src.Utils import (State, model, Utils, NEGATIVE_INF,
+                       id_to_token, vocab, HARD_LIMIT)
 from src.Models import FunctionDefinition
 
 
