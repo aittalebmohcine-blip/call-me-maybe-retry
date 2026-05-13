@@ -285,7 +285,9 @@ class Pipeline(BaseModel):
             if self.function_schema[curent_param]["type"] == "string":
                 return State.EXPECT_PARAM_VALUE_OPEN, stack
 
-            elif self.function_schema[curent_param]["type"] == "number":
+            elif self.function_schema[curent_param]["type"] in [
+                    "number", "integer", "float"
+            ]:
                 return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
 
             elif self.function_schema[curent_param]["type"] == "boolean":
