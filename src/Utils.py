@@ -9,6 +9,7 @@ from llm_sdk import Small_LLM_Model
 
 model: Small_LLM_Model = Small_LLM_Model()
 NEGATIVE_INF: float = float('-inf')
+HARD_LIMIT = 16
 
 path_to_vocab_file: str = model.get_path_to_vocab_file()
 with open(path_to_vocab_file, "r", encoding="utf-8") as f:

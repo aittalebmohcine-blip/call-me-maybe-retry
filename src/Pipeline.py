@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Dict, List, Union, Any, Tuple, Optional
 
-from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab
+from src.Utils import State, model, Utils, NEGATIVE_INF, id_to_token, vocab, HARD_LIMIT
 from src.Models import FunctionDefinition
 
 
@@ -36,6 +36,12 @@ class Pipeline(BaseModel):
     function_schema: Dict[str, Dict[str, str]] = Field(
         default={},
         description="Schema for the selected function parameters"
+    )
+
+    digit_counter: int = Field(
+        default=0,
+        description="Stores how many digits generated so far \
+        in case of parameter with type number/integer"
     )
 
     def _allowed_tokens(
@@ -134,10 +140,17 @@ class Pipeline(BaseModel):
                 allowed_strings = ["true", "false", "}"]
 
         elif state == State.EXPECT_PARAM_NUM_VALUE_BODY:
+
             if self.remaining_prams_counter > 0:
                 allowed_strings = list("0123456789-+.eE^,")
+                if self.digit_counter > HARD_LIMIT:
+                    allowed_strings = [","]
             else:
                 allowed_strings = list("0123456789-+.eE^}")
+                if self.digit_counter > HARD_LIMIT:
+                    allowed_strings = ["}"]
+
+            self.digit_counter += 1
 
         elif state == State.EXPECT_PARAM_VALUE_OPEN:
             allowed_strings = ['"']
@@ -288,6 +301,7 @@ class Pipeline(BaseModel):
             elif self.function_schema[curent_param]["type"] in [
                     "number", "integer", "float"
             ]:
+                self.digit_counter = 0
                 return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
 
             elif self.function_schema[curent_param]["type"] == "boolean":
