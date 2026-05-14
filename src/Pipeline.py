@@ -14,7 +14,7 @@ class Pipeline(BaseModel):
     the current parsing state and grammar rules.
 
     Attributes:
-        functions_by_name: Dictionary mapping functionnames to their
+        functions_by_name: Dictionary mapping function names to their
         definitions.
         stack: Stack for tracking nested structures (objects/arrays).
         remaining_prams_counter: Counter for tracking unparsed parameters.

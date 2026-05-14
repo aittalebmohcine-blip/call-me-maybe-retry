@@ -6,11 +6,6 @@ from pathlib import Path
 
 
 def main() -> None:
-    from src.Pipeline import Pipeline
-    from src.Parser import Parser
-    from src.Models import FunctionDefinition
-    from src.Utils import Utils
-
     """Main entry point for the function calling pipeline.
 
     Orchestrates the complete workflow:
@@ -23,6 +18,10 @@ def main() -> None:
         ValueError: If attempting to overwrite protected
         files (.py) or system files.
     """
+    from src.Pipeline import Pipeline
+    from src.Parser import Parser
+    from src.Models import FunctionDefinition
+    from src.Utils import Utils
     # input parsing
     forbidden_files = {
         "pyproject.toml",
