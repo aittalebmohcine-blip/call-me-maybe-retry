@@ -4,13 +4,13 @@ import json
 import argparse
 from pathlib import Path
 
-from src.Pipeline import Pipeline
-from src.Parser import Parser
-from src.Models import FunctionDefinition
-from src.Utils import Utils
-
 
 def main() -> None:
+    from src.Pipeline import Pipeline
+    from src.Parser import Parser
+    from src.Models import FunctionDefinition
+    from src.Utils import Utils
+
     """Main entry point for the function calling pipeline.
 
     Orchestrates the complete workflow:
@@ -120,5 +120,8 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\nExiting the program...")
+    except ImportError as e:
+        print(f"ERROR: {e}")
+        print("Try: 'uv run python -m src'. or install the missing packages")
     except Exception as e:
         print(e)
