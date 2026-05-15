@@ -3,6 +3,7 @@ from typing import List, Any, Dict
 from enum import Enum, auto
 import json
 
+from src.Models import ParameterDefinition
 from src.Parser import FunctionDefinition
 from llm_sdk import Small_LLM_Model
 
@@ -28,7 +29,7 @@ class Utils(BaseModel):
     def load_function_schema(
         name: str,
         functions_by_name: Dict[str, FunctionDefinition]
-    ) -> Dict[str, Dict[str, str]]:
+    ) -> Dict[str, ParameterDefinition]:
         """Load parameter schema for a function by name.
 
         Args:
@@ -101,7 +102,7 @@ class Utils(BaseModel):
         """
         functions_text: str = "\n".join(
             f"- {f.name}(" +
-            ", ".join(f"{k}: {v['type']}" for k, v in f.parameters.items()) +
+            ", ".join(f"{k}: {v.type}" for k, v in f.parameters.items()) +
             ")"
             for f in functions
         )

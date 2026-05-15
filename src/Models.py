@@ -1,5 +1,12 @@
 from pydantic import BaseModel, Field
-from typing import Dict
+from typing import Dict, Literal
+
+
+ParamType = Literal["number", "integer", "string", "boolean"]
+
+
+class ParameterDefinition(BaseModel):
+    type: ParamType
 
 
 class FunctionDefinition(BaseModel):
@@ -20,7 +27,9 @@ class FunctionDefinition(BaseModel):
     name: str = Field(..., description="The name of the function")
     description: str = Field(...,
                              description="The description of the function")
-    parameters: Dict[str, Dict[str, str]
+    parameters: Dict[str, ParameterDefinition
                      ] = Field(..., description="Parameters the function take")
-    returns: Dict[str, str] = Field(...,
-                                    description="What the function returns")
+    returns: ParameterDefinition = Field(
+        ...,
+        description="What the function returns"
+    )

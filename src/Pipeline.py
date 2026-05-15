@@ -3,7 +3,7 @@ from typing import Dict, List, Union, Any, Tuple, Optional
 
 from src.Utils import (State, model, Utils, NEGATIVE_INF,
                        id_to_token, vocab, HARD_LIMIT)
-from src.Models import FunctionDefinition
+from src.Models import FunctionDefinition, ParameterDefinition
 
 
 class Pipeline(BaseModel):
@@ -34,7 +34,7 @@ class Pipeline(BaseModel):
         default=0,
         description="Counter for remaining parameters to parse"
     )
-    function_schema: Dict[str, Dict[str, str]] = Field(
+    function_schema: Dict[str, ParameterDefinition] = Field(
         default={},
         description="Schema for the selected function parameters"
     )
@@ -296,16 +296,16 @@ class Pipeline(BaseModel):
             curent_param = list(self.function_schema.keys())[
                 total_params - self.remaining_prams_counter - 1]
 
-            if self.function_schema[curent_param]["type"] == "string":
+            if self.function_schema[curent_param].type == "string":
                 return State.EXPECT_PARAM_VALUE_OPEN, stack
 
-            elif self.function_schema[curent_param]["type"] in [
-                    "number", "integer", "float"
+            elif self.function_schema[curent_param].type in [
+                    "number", "integer"
             ]:
                 self.digit_counter = 0
                 return State.EXPECT_PARAM_NUM_VALUE_BODY, stack
 
-            elif self.function_schema[curent_param]["type"] == "boolean":
+            elif self.function_schema[curent_param].type == "boolean":
                 return State.EXPECT_PARAM_BOOL_VALUE_BODY, stack
         # -------------
 
@@ -405,7 +405,7 @@ class Pipeline(BaseModel):
         cur_state: Dict[str, Any] = {"cursor": f_names_trie}
         current_function_name_ids: List[int] = []
         current_function_name: Optional[str] = None
-        function_schema: Optional[Dict[str, Dict[str, str]]] = None
+        function_schema: Optional[Dict[str, ParameterDefinition]] = None
         while True:
             # ids -> logits
             logits: List[float] = model.get_logits_from_input_ids(input_ids)

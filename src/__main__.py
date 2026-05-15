@@ -101,7 +101,7 @@ def main() -> None:
         curent_fn_name = result.get("name", "")
         cur_fn_schema = functions_by_name[curent_fn_name].parameters
         for k in result["parameters"]:
-            if cur_fn_schema[k]["type"] == "number":
+            if cur_fn_schema[k].type == "number":
                 result["parameters"][k] = float(result["parameters"][k])
 
         total_calls.append(result)
