@@ -112,8 +112,11 @@ class Parser(BaseModel):
 
         # extract prompts
         for element in data:
-            if element.get("prompt"):
-                prompts.append(element["prompt"])
+            if isinstance(element.get("prompt"), str):
+                if element["prompt"].strip():
+                    prompts.append(element["prompt"])
+            else:
+                raise ValueError("ERROR: All prompts must be strings")
 
         return prompts
 
