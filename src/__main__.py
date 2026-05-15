@@ -18,10 +18,6 @@ def main() -> None:
         ValueError: If attempting to overwrite protected
         files (.py) or system files.
     """
-    from src.Pipeline import Pipeline
-    from src.Parser import Parser
-    from src.Models import FunctionDefinition
-    from src.Utils import Utils
     # input parsing
     forbidden_files = {
         "pyproject.toml",
@@ -63,6 +59,9 @@ def main() -> None:
     # ---------------
 
     # -- loading and parsing files --
+    from src.Parser import Parser
+    from src.Models import FunctionDefinition
+
     parser: Parser = Parser(
         func_defs_path=args.functions_definitions,
         prompts_path=args.input,
@@ -81,6 +80,9 @@ def main() -> None:
     prompts: List[str] = parser.parse_prompts()
 
     # -- generation pipeline --
+    from src.Utils import Utils
+    from src.Pipeline import Pipeline
+
     pipline: Pipeline = Pipeline(functions_by_name=functions_by_name)
 
     ref_s: float = time.time()
